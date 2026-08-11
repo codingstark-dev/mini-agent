@@ -28,3 +28,19 @@ test("activation loads instructions and advertises resources on demand", async (
   assert.equal(activated.instructions.includes("description:"), false);
   assert.deepEqual(activated.resources, ["references/status.md"]);
 });
+
+test("the bundled welcome skill preserves the assignment's required header", async () => {
+  const catalog = await discoverSkills([
+    { directory: path.resolve(".skills"), source: "bundled" },
+  ]);
+  const welcome = catalog.skills.find((skill) => skill.name === "welcome-me");
+  assert.ok(welcome);
+
+  const activated = await activateSkill(welcome);
+
+  assert.match(activated.instructions, /> Welcome to our Command Code assignment agent!/);
+  assert.deepEqual(
+    catalog.skills.map((skill) => skill.name).sort(),
+    ["changelog-generator", "internal-comms", "welcome-me"],
+  );
+});
