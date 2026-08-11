@@ -1,4 +1,4 @@
-import { readdir, readFile } from "node:fs/promises";
+import { readdir, readFile, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 
 import type { SkillSummary } from "./discovery.js";
@@ -49,4 +49,31 @@ export async function activateSkill(skill: SkillSummary): Promise<ActivatedSkill
     instructions: instructionBody(markdown),
     resources: await listResources(directory),
   };
+}
+
+export async function readSkillResource(
+  skill: ActivatedSkill,
+  relativePath: string,
+  maxBytes = 64 * 1024,
+): Promise<string> {
+  const parts = relativePath.split(/[\\/]/);
+  if (
+    path.isAbsolute(relativePath) ||
+    parts.some((part) => part === ".." || part === "." || part.length === 0 || part.startsWith(".")) ||
+    relativePath === "SKILL.md"
+  ) {
+    throw new Error("Resource path must stay inside the active skill");
+  }
+
+  const root = await realpath(skill.directory);
+  const candidate = await realpath(path.resolve(root, relativePath));
+  const relation = path.relative(root, candidate);
+  if (relation.startsWith("..") || path.isAbsolute(relation)) {
+    throw new Error("Resource path must stay inside the active skill");
+  }
+
+  const details = await stat(candidate);
+  if (!details.isFile()) throw new Error("Skill resource must be a file");
+  if (details.size > maxBytes) throw new Error(`Skill resource exceeds ${maxBytes} bytes`);
+  return readFile(candidate, "utf8");
 }

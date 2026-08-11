@@ -4,7 +4,9 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { activateSkill } from "../../src/skills/activation.js";
+import { symlink } from "node:fs/promises";
+
+import { activateSkill, readSkillResource } from "../../src/skills/activation.js";
 import { discoverSkills } from "../../src/skills/discovery.js";
 
 test("activation loads instructions and advertises resources on demand", async () => {
@@ -43,4 +45,26 @@ test("the bundled welcome skill preserves the assignment's required header", asy
     catalog.skills.map((skill) => skill.name).sort(),
     ["changelog-generator", "internal-comms", "welcome-me"],
   );
+});
+
+test("resource reads stay inside the active skill", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "mini-agent-resource-"));
+  const skillDirectory = path.join(root, "internal-comms");
+  await mkdir(path.join(skillDirectory, "examples"), { recursive: true });
+  await writeFile(
+    path.join(skillDirectory, "SKILL.md"),
+    `---\nname: internal-comms\ndescription: Write internal updates.\n---\n\nRead the matching example.`,
+  );
+  await writeFile(path.join(skillDirectory, "examples", "status.md"), "Use a 3P update.");
+  const outside = path.join(root, "secret.txt");
+  await writeFile(outside, "not for the model");
+  await symlink(outside, path.join(skillDirectory, "examples", "escape.md"));
+  const catalog = await discoverSkills([{ directory: root, source: "project" }]);
+  const skill = catalog.skills[0];
+  assert.ok(skill);
+  const activated = await activateSkill(skill);
+
+  assert.equal(await readSkillResource(activated, "examples/status.md"), "Use a 3P update.");
+  await assert.rejects(readSkillResource(activated, "../secret.txt"), /inside the active skill/);
+  await assert.rejects(readSkillResource(activated, "examples/escape.md"), /inside the active skill/);
 });
