@@ -78,6 +78,14 @@ export class AnthropicProvider implements Provider {
         : "other";
     const requestId = (response as typeof response & { _request_id?: string })._request_id;
 
-    return { content, stopReason, ...(requestId ? { requestId } : {}) };
+    return {
+      content,
+      stopReason,
+      ...(requestId ? { requestId } : {}),
+      usage: {
+        inputTokens: response.usage.input_tokens,
+        outputTokens: response.usage.output_tokens,
+      },
+    };
   }
 }

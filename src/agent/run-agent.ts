@@ -5,6 +5,7 @@ import type {
   ProviderContent,
   ProviderMessage,
   ProviderTool,
+  ProviderUsage,
   ToolResultBlock,
   ToolUseBlock,
 } from "../providers/types.js";
@@ -14,6 +15,7 @@ export interface AgentResult {
   text: string;
   activations: string[];
   requestIds: string[];
+  usage: ProviderUsage;
 }
 
 export interface ConversationTurn {
@@ -23,15 +25,15 @@ export interface ConversationTurn {
 
 export type AgentEvent =
   | { type: "model_request"; turn: number }
-  | { type: "model_response"; turn: number; stopReason: string }
+  | { type: "model_response"; turn: number; stopReason: string; usage?: ProviderUsage }
   | { type: "skill_activated"; name: string }
   | { type: "resource_read"; skill: string; path: string }
   | { type: "subagent_started"; id: string; role: string; task: string }
   | { type: "subagent_completed"; id: string; role: string }
   | { type: "subagent_failed"; id: string; role: string; message: string }
-  | { type: "workspace_tool_started"; name: string; detail: string }
-  | { type: "workspace_tool_completed"; name: string; detail: string }
-  | { type: "workspace_tool_failed"; name: string; detail: string; message: string }
+  | { type: "workspace_tool_started"; id: string; name: string; detail: string }
+  | { type: "workspace_tool_completed"; id: string; name: string; detail: string }
+  | { type: "workspace_tool_failed"; id: string; name: string; detail: string; message: string }
   | { type: "complete"; turns: number };
 
 export interface RunAgentOptions {
@@ -163,6 +165,12 @@ function workspaceToolDetail(call: ToolUseBlock): string {
   return `${call.name} ${target}`;
 }
 
+function addUsage(total: ProviderUsage, addition: ProviderUsage | undefined): void {
+  if (!addition) return;
+  total.inputTokens += addition.inputTokens;
+  total.outputTokens += addition.outputTokens;
+}
+
 export async function runAgent(options: RunAgentOptions): Promise<AgentResult> {
   const skills = new Map(options.catalog.skills.map((skill) => [skill.name, skill]));
   const active = new Map<string, ActivatedSkill>();
@@ -188,6 +196,7 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentResult> {
     { role: "user", content: initialContent },
   ];
   const requestIds: string[] = [];
+  const usage: ProviderUsage = { inputTokens: 0, outputTokens: 0 };
   const maxTurns = options.maxTurns ?? 6;
   const maxSubagents = Math.max(0, Math.floor(options.maxSubagents ?? 2));
   let subagentsUsed = 0;
@@ -205,7 +214,13 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentResult> {
       ],
       ...(options.signal ? { signal: options.signal } : {}),
     });
-    options.onEvent?.({ type: "model_response", turn: turn + 1, stopReason: response.stopReason });
+    addUsage(usage, response.usage);
+    options.onEvent?.({
+      type: "model_response",
+      turn: turn + 1,
+      stopReason: response.stopReason,
+      ...(response.usage ? { usage: response.usage } : {}),
+    });
     if (response.requestId) requestIds.push(response.requestId);
     messages.push({ role: "assistant", content: response.content });
 
@@ -223,14 +238,14 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentResult> {
         throw new Error(`Claude stopped unexpectedly (${response.stopReason})`);
       }
       options.onEvent?.({ type: "complete", turns: turn + 1 });
-      return { text: responseText, activations: [...active.keys()], requestIds };
+      return { text: responseText, activations: [...active.keys()], requestIds, usage };
     }
 
     const results: ProviderContent[] = [];
     for (const call of calls) {
       if (options.workspaceTools?.tools.some((tool) => tool.name === call.name)) {
         const detail = workspaceToolDetail(call);
-        options.onEvent?.({ type: "workspace_tool_started", name: call.name, detail });
+        options.onEvent?.({ type: "workspace_tool_started", id: call.id, name: call.name, detail });
         try {
           const executed = await options.workspaceTools.execute(call.name, call.input, options.signal);
           results.push({
@@ -240,6 +255,7 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentResult> {
           } satisfies ToolResultBlock);
           options.onEvent?.({
             type: "workspace_tool_completed",
+            id: call.id,
             name: call.name,
             detail: executed.summary,
           });
@@ -251,7 +267,7 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentResult> {
             content: message,
             isError: true,
           } satisfies ToolResultBlock);
-          options.onEvent?.({ type: "workspace_tool_failed", name: call.name, detail, message });
+          options.onEvent?.({ type: "workspace_tool_failed", id: call.id, name: call.name, detail, message });
         }
         continue;
       }
@@ -291,6 +307,7 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentResult> {
             ...(options.signal ? { signal: options.signal } : {}),
           });
           if (delegated.requestId) requestIds.push(delegated.requestId);
+          addUsage(usage, delegated.usage);
           const findings = delegated.content
             .flatMap((block) => (block.type === "text" ? [block.text] : []))
             .join("\n")

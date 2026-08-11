@@ -15,6 +15,7 @@ test("the lite provider calls the Claude Messages API without an SDK dependency"
           id: "msg_test",
           content: [{ type: "text", text: "Hello" }],
           stop_reason: "end_turn",
+          usage: { input_tokens: 42, output_tokens: 7 },
         }),
         { status: 200, headers: { "content-type": "application/json", "request-id": "req_test" } },
       );
@@ -29,6 +30,7 @@ test("the lite provider calls the Claude Messages API without an SDK dependency"
 
   assert.equal(response.content[0]?.type, "text");
   assert.equal(response.requestId, "req_test");
+  assert.deepEqual(response.usage, { inputTokens: 42, outputTokens: 7 });
   assert.match(String(request?.body), /claude-sonnet-5/);
   assert.equal((request?.headers as Record<string, string>)["x-api-key"], "test-key");
 });

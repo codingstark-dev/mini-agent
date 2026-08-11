@@ -74,6 +74,7 @@ export class AnthropicProvider implements Provider {
     const payload = (await response.json()) as {
       content?: Array<{ type?: string; text?: string; id?: string; name?: string; input?: unknown }>;
       stop_reason?: string;
+      usage?: { input_tokens?: number; output_tokens?: number };
     };
     const content: ProviderResponse["content"] = [];
     for (const block of payload.content ?? []) {
@@ -86,6 +87,15 @@ export class AnthropicProvider implements Provider {
     }
     const knownReasons = ["end_turn", "tool_use", "max_tokens", "refusal"] as const;
     const stopReason = knownReasons.find((reason) => reason === payload.stop_reason) ?? "other";
-    return { content, stopReason, ...(requestId ? { requestId } : {}) };
+    const inputTokens = payload.usage?.input_tokens;
+    const outputTokens = payload.usage?.output_tokens;
+    return {
+      content,
+      stopReason,
+      ...(requestId ? { requestId } : {}),
+      ...(typeof inputTokens === "number" && typeof outputTokens === "number"
+        ? { usage: { inputTokens, outputTokens } }
+        : {}),
+    };
   }
 }

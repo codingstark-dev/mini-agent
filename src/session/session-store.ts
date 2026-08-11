@@ -5,6 +5,7 @@ import path from "node:path";
 
 import type { AgentEvent } from "../agent/run-agent.js";
 import type { ProviderName } from "../providers/create.js";
+import type { ProviderUsage } from "../providers/types.js";
 
 export interface SessionTurn {
   id: string;
@@ -13,6 +14,7 @@ export interface SessionTurn {
   activations: string[];
   activity: AgentEvent[];
   createdAt: string;
+  usage?: ProviderUsage;
 }
 
 export interface AgentSession {

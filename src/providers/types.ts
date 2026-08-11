@@ -37,10 +37,16 @@ export interface ProviderRequest {
   signal?: AbortSignal;
 }
 
+export interface ProviderUsage {
+  inputTokens: number;
+  outputTokens: number;
+}
+
 export interface ProviderResponse {
   content: Array<TextBlock | ToolUseBlock>;
   stopReason: "end_turn" | "tool_use" | "max_tokens" | "refusal" | "other";
   requestId?: string;
+  usage?: ProviderUsage;
 }
 
 export interface Provider {

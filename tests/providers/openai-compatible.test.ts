@@ -15,6 +15,7 @@ test("maps tools and tool calls through an OpenAI-compatible endpoint", async ()
       return new Response(
         JSON.stringify({
           id: "chat_test",
+          usage: { prompt_tokens: 90, completion_tokens: 12 },
           choices: [
             {
               finish_reason: "tool_calls",
@@ -65,6 +66,7 @@ test("maps tools and tool calls through an OpenAI-compatible endpoint", async ()
     ],
     stopReason: "tool_use",
     requestId: "req_test",
+    usage: { inputTokens: 90, outputTokens: 12 },
   });
 });
 

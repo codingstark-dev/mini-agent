@@ -24,12 +24,14 @@ class PageBuilderProvider implements Provider {
           input: { path: "public/index.html", content: "<!doctype html><h1>Built by tools</h1>\n" },
         }],
         stopReason: "tool_use",
+        usage: { inputTokens: 120, outputTokens: 18 },
       };
     }
     assert.match(JSON.stringify(request.messages), /Wrote .*public\/index\.html/);
     return {
       content: [{ type: "text", text: "Created public/index.html." }],
       stopReason: "end_turn",
+      usage: { inputTokens: 180, outputTokens: 22 },
     };
   }
 }
@@ -47,6 +49,7 @@ test("the agent creates an HTML page through visible workspace tool calls", asyn
   });
 
   assert.equal(result.text, "Created public/index.html.");
+  assert.deepEqual(result.usage, { inputTokens: 300, outputTokens: 40 });
   assert.match(await readFile(path.join(root, "public/index.html"), "utf8"), /Built by tools/);
   assert.equal(events.some((event) => event.type === "workspace_tool_started"), true);
   assert.equal(events.some((event) => event.type === "workspace_tool_completed"), true);

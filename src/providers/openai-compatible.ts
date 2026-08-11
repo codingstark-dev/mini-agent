@@ -135,6 +135,7 @@ export class OpenAICompatibleProvider implements Provider {
           }>;
         };
       }>;
+      usage?: { prompt_tokens?: number; completion_tokens?: number };
     };
     const choice = payload.choices?.[0];
     if (!choice?.message) throw new Error(`${this.options.name} returned no response message`);
@@ -154,10 +155,15 @@ export class OpenAICompatibleProvider implements Provider {
     }
 
     const resolvedRequestId = requestId ?? payload.id;
+    const inputTokens = payload.usage?.prompt_tokens;
+    const outputTokens = payload.usage?.completion_tokens;
     return {
       content,
       stopReason: stopReason(choice.finish_reason),
       ...(resolvedRequestId ? { requestId: resolvedRequestId } : {}),
+      ...(typeof inputTokens === "number" && typeof outputTokens === "number"
+        ? { usage: { inputTokens, outputTokens } }
+        : {}),
     };
   }
 }

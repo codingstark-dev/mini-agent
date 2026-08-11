@@ -7,10 +7,11 @@ import type { Provider } from "../providers/types.js";
 import { SessionStore, type SessionTurn } from "../session/session-store.js";
 import type { SkillCatalog } from "../skills/discovery.js";
 import type { WorkspaceTools } from "../tools/workspace.js";
+import { ActivityView, activityLineCount } from "./activity-view.js";
 import { ChoicePicker } from "./choice-picker.js";
 import { ModelPicker } from "./model-picker.js";
 import { SlashSuggestions } from "./slash-suggestions.js";
-import { activityLabel, useHarnessController } from "./use-harness.js";
+import { useHarnessController } from "./use-harness.js";
 import { fitRecentTurns } from "./viewport.js";
 
 interface Theme {
@@ -24,6 +25,12 @@ const themes: Record<string, Theme> = {
   default: { accent: "cyan", answer: "white", muted: "gray", prompt: "green" },
   mono: { accent: "white", answer: "white", muted: "gray", prompt: "white" },
 };
+
+function compactTokens(value: number): string {
+  if (value < 1000) return String(value);
+  if (value < 1_000_000) return `${(value / 1000).toFixed(value < 10_000 ? 1 : 0)}k`;
+  return `${(value / 1_000_000).toFixed(1)}m`;
+}
 
 interface AppProperties {
   catalog: SkillCatalog;
@@ -48,7 +55,7 @@ function TurnView({ turn, showActivity, theme }: {
     <Box flexDirection="column" marginBottom={1}>
       <Text color={theme.prompt}>❯ {turn.prompt}</Text>
       {showActivity && turn.activity.length > 0 && (
-        <Text color={theme.muted}>  {turn.activity.map(activityLabel).join(" → ")}</Text>
+        <ActivityView accent={theme.accent} events={turn.activity} maxItems={4} muted={theme.muted} />
       )}
       <Text color={theme.answer}>{turn.answer}</Text>
     </Box>
@@ -79,7 +86,7 @@ function App(properties: AppProperties): React.JSX.Element {
   const reservedRows = 4 + panelRows + suggestionRows +
     (harness.notice ? 1 : 0) +
     (harness.activeSkills.length > 0 ? 1 : 0) +
-    (harness.busy && harness.latestActivity ? 1 : 0);
+    (harness.busy ? activityLineCount(harness.liveActivity, 5) : 0);
   const turnWindow = fitRecentTurns(
     harness.turns,
     Math.max(1, rows - reservedRows),
@@ -89,10 +96,16 @@ function App(properties: AppProperties): React.JSX.Element {
 
   return (
     <Box flexDirection="column" height={rows} overflow="hidden" paddingX={1}>
-      <Box flexShrink={0} gap={1}>
+      <Box flexShrink={0} gap={1} width="100%">
         <Text bold color={properties.theme.accent}>mini-agent</Text>
-        <Text color={properties.theme.muted} wrap="truncate-end">{harness.providerLabel} · {harness.model}</Text>
-        <Text color={properties.theme.muted}>session {harness.session.id}</Text>
+        <Box flexGrow={1} overflow="hidden">
+          <Text color={properties.theme.muted} wrap="truncate-end">
+            {harness.providerLabel} · {harness.model} · session {harness.session.id}
+          </Text>
+        </Box>
+        <Text color={properties.theme.muted}>
+          {compactTokens(harness.usage.inputTokens)} in · {compactTokens(harness.usage.outputTokens)} out
+        </Text>
       </Box>
 
       <Box flexDirection="column" flexGrow={1} overflow="hidden">
@@ -142,8 +155,12 @@ function App(properties: AppProperties): React.JSX.Element {
                 />
               ))}
             </Box>
-            {harness.busy && harness.latestActivity && (
-              <Text color={properties.theme.accent}>◌ {activityLabel(harness.latestActivity)}</Text>
+            {harness.busy && harness.liveActivity.length > 0 && (
+              <ActivityView
+                accent={properties.theme.accent}
+                events={harness.liveActivity}
+                muted={properties.theme.muted}
+              />
             )}
             {!harness.busy && harness.suggestions.length > 0 && (
               <SlashSuggestions

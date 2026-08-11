@@ -8,7 +8,7 @@ import {
 } from "../agent/run-agent.js";
 import { providerLabel as getProviderLabel, type ProviderName } from "../providers/create.js";
 import type { OpenRouterModel } from "../providers/openrouter-models.js";
-import type { Provider } from "../providers/types.js";
+import type { Provider, ProviderUsage } from "../providers/types.js";
 import {
   createSession,
   redoSession,
@@ -118,12 +118,20 @@ function sessionHistory(turns: SessionTurn[]): ConversationTurn[] {
   return turns.map((turn) => ({ prompt: turn.prompt, answer: turn.answer }));
 }
 
+function sessionUsage(turns: readonly SessionTurn[]): ProviderUsage {
+  return turns.reduce<ProviderUsage>((total, turn) => ({
+    inputTokens: total.inputTokens + (turn.usage?.inputTokens ?? 0),
+    outputTokens: total.outputTokens + (turn.usage?.outputTokens ?? 0),
+  }), { inputTokens: 0, outputTokens: 0 });
+}
+
 export interface HarnessController extends HarnessState {
   activeSkills: string[];
   canPickModels: boolean;
   closePicker: () => void;
   latestActivity: AgentEvent | undefined;
   suggestions: SlashSuggestion[];
+  usage: ProviderUsage;
   selectChoice: (id: string) => Promise<void>;
   switchModel: (model: string) => Promise<void>;
 }
@@ -337,7 +345,8 @@ export function useHarnessController(options: HarnessOptions): HarnessController
         });
         return;
       case "status":
-        patch({ panel: `session ${state.session.id}\n${state.providerLabel} · ${state.model}\n${state.turns.length} turns · ${options.catalog.skills.length} skills\nworkspace ${options.workspaceTools.mode}` });
+        const usage = sessionUsage(state.turns);
+        patch({ panel: `session ${state.session.id}\n${state.providerLabel} · ${state.model}\n${state.turns.length} turns · ${options.catalog.skills.length} skills\n${usage.inputTokens} input tokens · ${usage.outputTokens} output tokens\nworkspace ${options.workspaceTools.mode}` });
         return;
       case "activity":
       case "thinking":
@@ -391,6 +400,7 @@ export function useHarnessController(options: HarnessOptions): HarnessController
         activations: result.activations,
         activity,
         createdAt: timestamp,
+        usage: result.usage,
       };
       const { redoTurns: _discardedRedo, ...committedSession } = state.session;
       await saveSession({
@@ -492,6 +502,7 @@ export function useHarnessController(options: HarnessOptions): HarnessController
     closePicker,
     latestActivity: state.liveActivity.at(-1),
     suggestions,
+    usage: sessionUsage(state.turns),
     selectChoice,
     switchModel,
   };

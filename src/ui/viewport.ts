@@ -1,4 +1,5 @@
 import type { SessionTurn } from "../session/session-store.js";
+import { activityLineCount } from "./activity-view.js";
 
 export interface TurnWindow {
   turns: SessionTurn[];
@@ -16,7 +17,7 @@ function turnHeight(turn: SessionTurn, columns: number, showActivity: boolean): 
   const width = Math.max(20, columns - 4);
   return wrappedLines(turn.prompt, width) +
     wrappedLines(turn.answer, width) +
-    (showActivity && turn.activity.length > 0 ? 1 : 0) +
+    (showActivity ? activityLineCount(turn.activity, 4) : 0) +
     1;
 }
 
