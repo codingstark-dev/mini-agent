@@ -10,7 +10,7 @@ export class DemoProvider implements Provider {
       message.content.flatMap((block) => (block.type === "tool_result" ? [block.content] : [])),
     );
     if (toolResults.some((result) => result.includes('<activated_skill name="welcome-me">'))) {
-      return text("> Welcome to our Command Code assignment agent!\nWe're glad to have you here. Start by reading the README, running the tests, and choosing one small issue to understand end to end.");
+      return text("> Welcome to our agent!\nWe're glad to have you here. Start by reading the README, running the tests, and choosing one small issue to understand end to end.");
     }
     if (toolResults.some((result) => result.includes('<activated_skill name="changelog-generator">'))) {
       return text("# Changes\n\n## Improvements\n\n- Turned recent development work into concise, customer-facing release notes.");

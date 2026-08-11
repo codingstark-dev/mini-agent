@@ -12,6 +12,6 @@ test("the documented mock command demonstrates welcome skill selection", async (
     { cwd: process.cwd() },
   );
 
-  assert.match(stdout, /^> Welcome to our Command Code assignment agent!/);
+  assert.match(stdout, /^> Welcome to our agent!/);
   assert.match(stderr, /activated welcome-me/);
 });

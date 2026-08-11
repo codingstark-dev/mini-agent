@@ -40,7 +40,7 @@ test("the bundled welcome skill preserves the assignment's required header", asy
 
   const activated = await activateSkill(welcome);
 
-  assert.match(activated.instructions, /> Welcome to our Command Code assignment agent!/);
+  assert.match(activated.instructions, /> Welcome to our agent!/);
   assert.deepEqual(
     catalog.skills.map((skill) => skill.name).sort(),
     ["changelog-generator", "internal-comms", "welcome-me"],
