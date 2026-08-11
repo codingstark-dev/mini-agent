@@ -24,7 +24,7 @@ class WelcomeProvider implements Provider {
     }
 
     return {
-      content: [{ type: "text", text: "> Welcome to our agent!\nLet’s get you oriented." }],
+      content: [{ type: "text", text: "> Welcome to our Command Code assignment agent!\nLet’s get you oriented." }],
       stopReason: "end_turn",
     };
   }
@@ -174,7 +174,7 @@ test("the model can select a skill without seeing its instructions up front", as
   });
 
   assert.equal(result.activations[0], "welcome-me");
-  assert.match(result.text, /^> Welcome to our agent!/);
+  assert.match(result.text, /^> Welcome to our Command Code assignment agent!/);
   assert.match(provider.requests[0]?.system ?? "", /Welcome users who say they are new/);
   assert.equal(provider.requests[0]?.system.includes("HARD-TO-GUESS-WELCOME"), false);
   assert.equal(JSON.stringify(provider.requests[1]?.messages).includes("HARD-TO-GUESS-WELCOME"), true);
