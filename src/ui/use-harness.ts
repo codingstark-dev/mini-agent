@@ -93,39 +93,6 @@ export interface HarnessOptions {
   exit: () => void;
 }
 
-export function activityLabel(event: AgentEvent): string {
-  switch (event.type) {
-    case "model_request":
-      return `model request ${event.turn}`;
-    case "model_response":
-      return `model ${event.stopReason.replaceAll("_", " ")}`;
-    case "skill_activated":
-      return `loaded ${event.name}`;
-    case "resource_read":
-      return `read ${event.skill}/${event.path}`;
-    case "subagent_started":
-      return `delegated to ${event.role}`;
-    case "subagent_completed":
-      return `${event.role} subagent complete`;
-    case "subagent_failed":
-      return `${event.role} subagent failed`;
-    case "workflow_role_started":
-      return `${event.role} started`;
-    case "workflow_role_completed":
-      return `${event.role} complete`;
-    case "workflow_verification":
-      return `verification ${event.passed ? "passed" : "failed"}: ${event.detail}`;
-    case "workspace_tool_started":
-      return `running ${event.detail}`;
-    case "workspace_tool_completed":
-      return event.detail;
-    case "workspace_tool_failed":
-      return `${event.detail} failed`;
-    case "complete":
-      return `complete in ${event.turns} call${event.turns === 1 ? "" : "s"}`;
-  }
-}
-
 function sessionHistory(turns: SessionTurn[]): ConversationTurn[] {
   return turns.map((turn) => ({ prompt: turn.prompt, answer: turn.answer }));
 }
