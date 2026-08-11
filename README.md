@@ -21,9 +21,11 @@ npm run dev -- "I'm new to this project, what should I do?"
 ```
 
 Running `npm run dev` without a prompt opens the React/Ink terminal interface.
-If the selected provider has no key, the interface still opens; run `/key` and enter
-it in the masked prompt. Environment variables take precedence over locally saved
-keys. Saved keys live outside sessions in an owner-readable-only state file.
+If the selected provider has no key, the interface still opens. Run `/key`, choose
+a provider, confirm or edit its model ID, and enter the key in the masked prompt.
+The provider and model become active and are saved with the session. Environment
+variables take precedence over locally saved keys. Saved keys live outside sessions
+in an owner-readable-only state file.
 When OpenRouter is selected, press `Ctrl+P` to open the model picker. It fetches
 tool-capable models on demand, supports search and arrow-key navigation, and accepts
 a complete custom `provider/model` ID. The next prompt uses the selected model.

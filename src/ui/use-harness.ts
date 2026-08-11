@@ -6,7 +6,12 @@ import {
   type AgentEvent,
   type ConversationTurn,
 } from "../agent/run-agent.js";
-import { providerLabel as getProviderLabel, type ProviderName } from "../providers/create.js";
+import {
+  defaultModelFor,
+  parseProviderName,
+  providerLabel as getProviderLabel,
+  type ProviderName,
+} from "../providers/create.js";
 import type { OpenRouterModel } from "../providers/openrouter-models.js";
 import type { Provider, ProviderUsage } from "../providers/types.js";
 import {
@@ -37,7 +42,8 @@ import {
 
 export type PickerState =
   | { kind: "history"; choices: Choice[] }
-  | { kind: "rewind"; choices: Choice[] };
+  | { kind: "rewind"; choices: Choice[] }
+  | { kind: "provider"; choices: Choice[] };
 
 interface HarnessState {
   input: string;
@@ -54,8 +60,11 @@ interface HarnessState {
   picker: PickerState | undefined;
   panel: string;
   notice: string;
+  modelEntryOpen: boolean;
   keyEntryOpen: boolean;
   keyValue: string;
+  setupProvider: ProviderName | undefined;
+  setupModel: string;
   needsApiKey: boolean;
   suggestionIndex: number;
 }
@@ -143,8 +152,11 @@ export function useHarnessController(options: HarnessOptions): HarnessController
     picker: undefined,
     panel: "",
     notice: "",
+    modelEntryOpen: false,
     keyEntryOpen: false,
     keyValue: "",
+    setupProvider: undefined,
+    setupModel: "",
     needsApiKey: options.needsApiKey ?? false,
     suggestionIndex: 0,
   }));
@@ -270,8 +282,14 @@ export function useHarnessController(options: HarnessOptions): HarnessController
 
   async function saveApiKey(): Promise<void> {
     const apiKey = state.keyValue.trim();
+    const providerName = state.setupProvider;
+    const model = state.setupModel.trim();
     if (!apiKey) {
       patch({ panel: "API key cannot be empty." });
+      return;
+    }
+    if (!providerName || !model) {
+      patch({ panel: "Choose a provider and model before entering an API key." });
       return;
     }
     if (!options.configureApiKey) {
@@ -279,14 +297,65 @@ export function useHarnessController(options: HarnessOptions): HarnessController
       return;
     }
     try {
-      const provider = await options.configureApiKey(state.providerName, state.model, apiKey);
+      const provider = await options.configureApiKey(providerName, model, apiKey);
+      const nextSession = {
+        ...state.session,
+        provider: providerName,
+        model,
+        updatedAt: new Date().toISOString(),
+      };
       patch({
         provider,
+        providerName,
+        providerLabel: getProviderLabel(providerName),
+        model,
+        modelEntryOpen: false,
         keyEntryOpen: false,
         keyValue: "",
+        setupProvider: undefined,
+        setupModel: "",
         needsApiKey: false,
         panel: "",
-        notice: `${state.providerLabel} API key saved`,
+        notice: `${getProviderLabel(providerName)} · ${model} configured`,
+      });
+      await saveSession(nextSession);
+    } catch (error) {
+      patch({ panel: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
+  function openProviderSetup(): void {
+    const providers: ProviderName[] = ["anthropic", "openrouter", "vercel"];
+    patch({
+      picker: {
+        kind: "provider",
+        choices: providers.map((provider) => ({
+          id: provider,
+          label: getProviderLabel(provider),
+          detail: `default ${defaultModelFor(provider)}`,
+        })),
+      },
+      modelEntryOpen: false,
+      keyEntryOpen: false,
+      keyValue: "",
+      setupProvider: undefined,
+      setupModel: "",
+      panel: "",
+      notice: "",
+    });
+  }
+
+  function chooseSetupProvider(id: string): void {
+    try {
+      const provider = parseProviderName(id);
+      const model = defaultModelFor(provider);
+      patch({
+        picker: undefined,
+        setupProvider: provider,
+        setupModel: model,
+        modelEntryOpen: true,
+        input: model,
+        panel: "Edit the model ID if needed, then press Enter.",
       });
     } catch (error) {
       patch({ panel: error instanceof Error ? error.message : String(error) });
@@ -394,7 +463,7 @@ export function useHarnessController(options: HarnessOptions): HarnessController
         if (command.argument) {
           patch({ panel: "Type /key without the key. The next input is masked." });
         } else {
-          patch({ keyEntryOpen: true, keyValue: "", panel: "", notice: "" });
+          openProviderSetup();
         }
         return;
       case "plan":
@@ -559,6 +628,7 @@ export function useHarnessController(options: HarnessOptions): HarnessController
   async function selectChoice(id: string): Promise<void> {
     if (state.picker?.kind === "history") await resumeSession(id);
     if (state.picker?.kind === "rewind") await applyRewind(Number(id));
+    if (state.picker?.kind === "provider") chooseSetupProvider(id);
   }
 
   const suggestions = slashSuggestions(state.input, options.catalog.skills);
@@ -581,9 +651,53 @@ export function useHarnessController(options: HarnessOptions): HarnessController
       options.exit();
       return;
     }
+    if (state.modelEntryOpen) {
+      if (key.escape) {
+        patch({
+          modelEntryOpen: false,
+          setupProvider: undefined,
+          setupModel: "",
+          input: "",
+          panel: "",
+          notice: "API key setup cancelled",
+        });
+        return;
+      }
+      if (key.return) {
+        const model = state.input.trim();
+        if (!model) {
+          patch({ panel: "Model ID cannot be empty." });
+          return;
+        }
+        patch({
+          modelEntryOpen: false,
+          keyEntryOpen: true,
+          keyValue: "",
+          setupModel: model,
+          input: "",
+          panel: "",
+        });
+        return;
+      }
+      if (key.backspace || key.delete) {
+        dispatch({ type: "backspace" });
+        return;
+      }
+      if (!key.ctrl && !key.meta && character) {
+        dispatch({ type: "append_input", value: character });
+      }
+      return;
+    }
     if (state.keyEntryOpen) {
       if (key.escape) {
-        patch({ keyEntryOpen: false, keyValue: "", panel: "", notice: "API key setup cancelled" });
+        patch({
+          keyEntryOpen: false,
+          keyValue: "",
+          setupProvider: undefined,
+          setupModel: "",
+          panel: "",
+          notice: "API key setup cancelled",
+        });
         return;
       }
       if (key.return) {

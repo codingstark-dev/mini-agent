@@ -33,7 +33,7 @@ test("slash suggestions combine executable commands and installed skills", () =>
     { name: "plan", description: "Create and store an implementation plan", kind: "command" },
   ]);
   assert.deepEqual(slashSuggestions("/ke", skills), [
-    { name: "key", description: "Configure the current provider API key", kind: "command" },
+    { name: "key", description: "Choose a provider, model, and API key", kind: "command" },
   ]);
   assert.deepEqual(slashSuggestions("hello", skills), []);
 });

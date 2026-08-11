@@ -1,7 +1,7 @@
 import React from "react";
 import { Box, Text, render, useApp, useStdout } from "ink";
 
-import type { ProviderName } from "../providers/create.js";
+import { providerLabel, type ProviderName } from "../providers/create.js";
 import type { OpenRouterModel } from "../providers/openrouter-models.js";
 import type { Provider } from "../providers/types.js";
 import { SessionStore, type SessionTurn } from "../session/session-store.js";
@@ -140,11 +140,23 @@ function App(properties: AppProperties): React.JSX.Element {
           <ChoicePicker
             accent={properties.theme.accent}
             choices={harness.picker.choices}
-            emptyMessage={harness.picker.kind === "history" ? "No saved sessions." : "No turns to rewind."}
+            emptyMessage={
+              harness.picker.kind === "history"
+                ? "No saved sessions."
+                : harness.picker.kind === "rewind"
+                  ? "No turns to rewind."
+                  : "No providers available."
+            }
             muted={properties.theme.muted}
             onCancel={harness.closePicker}
             onSelect={(id) => { void harness.selectChoice(id); }}
-            title={harness.picker.kind === "history" ? "Session history" : "Rewind conversation"}
+            title={
+              harness.picker.kind === "history"
+                ? "Session history"
+                : harness.picker.kind === "rewind"
+                  ? "Rewind conversation"
+                  : "Choose provider"
+            }
           />
         ) : (
           <>
@@ -188,7 +200,9 @@ function App(properties: AppProperties): React.JSX.Element {
             <Text color={properties.theme.prompt}>❯ </Text>
             <Text>
               {harness.keyEntryOpen
-                ? `API key: ${"•".repeat(Math.min(harness.keyValue.length, 48))}`
+                ? `API key (${harness.setupProvider ? providerLabel(harness.setupProvider) : "provider"}): ${"•".repeat(Math.min(harness.keyValue.length, 48))}`
+                : harness.modelEntryOpen
+                  ? `Model: ${harness.input}`
                 : harness.busy
                   ? "working…"
                   : harness.input}
@@ -198,6 +212,8 @@ function App(properties: AppProperties): React.JSX.Element {
           <Text color={properties.theme.muted} wrap="truncate-end">
             {harness.keyEntryOpen
               ? "Enter save · Esc cancel · stored with owner-only permissions"
+              : harness.modelEntryOpen
+                ? "Enter continue · Esc cancel · model is saved with this session"
               : harness.busy
               ? "Esc stop current run · Ctrl+C exit"
               : `/ commands and skills${harness.canPickModels ? " · Ctrl+P models" : ""} · Ctrl+R rewind · Ctrl+C exit`}
