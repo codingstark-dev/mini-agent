@@ -126,3 +126,22 @@ test("an activated skill can load one referenced resource", async () => {
   assert.equal(JSON.stringify(provider.requests[0]).includes("RESOURCE CONTENT"), false);
   assert.equal(JSON.stringify(provider.requests[2]?.messages).includes("RESOURCE CONTENT"), true);
 });
+
+test("a slash command activates a known skill before the first model turn", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "mini-agent-explicit-"));
+  const skillDirectory = path.join(root, "welcome-me");
+  await mkdir(skillDirectory);
+  await writeFile(
+    path.join(skillDirectory, "SKILL.md"),
+    `---\nname: welcome-me\ndescription: Welcome new users.\n---\n\nEXPLICIT WELCOME INSTRUCTIONS`,
+  );
+  const catalog = await discoverSkills([{ directory: root, source: "project" }]);
+  const provider = new WeatherProvider();
+
+  const result = await runAgent({ prompt: "/welcome-me show me around", catalog, provider });
+
+  assert.deepEqual(result.activations, ["welcome-me"]);
+  assert.equal(JSON.stringify(provider.requests[0]?.messages).includes("EXPLICIT WELCOME INSTRUCTIONS"), true);
+  const firstBlock = provider.requests[0]?.messages[0]?.content[0];
+  assert.equal(firstBlock?.type === "text" ? firstBlock.text : undefined, "show me around");
+});

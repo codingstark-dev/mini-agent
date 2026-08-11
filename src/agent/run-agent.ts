@@ -102,8 +102,21 @@ function requestedResource(call: ToolUseBlock): { skill: string; path: string } 
 export async function runAgent(options: RunAgentOptions): Promise<AgentResult> {
   const skills = new Map(options.catalog.skills.map((skill) => [skill.name, skill]));
   const active = new Map<string, ActivatedSkill>();
+  const initialContent: ProviderContent[] = [];
+  const explicit = /^\/([a-z0-9]+(?:-[a-z0-9]+)*)(?:\s+|$)/.exec(options.prompt);
+  const explicitSummary = explicit?.[1] ? skills.get(explicit[1]) : undefined;
+  if (explicit?.[0] && explicitSummary) {
+    const activated = await activateSkill(explicitSummary);
+    active.set(activated.name, activated);
+    options.onActivation?.(activated.name);
+    const remainingPrompt = options.prompt.slice(explicit[0].length).trim();
+    initialContent.push({ type: "text", text: remainingPrompt || "Follow the explicitly activated skill." });
+    initialContent.push({ type: "text", text: activationContent(activated) });
+  } else {
+    initialContent.push({ type: "text", text: options.prompt });
+  }
   const messages: ProviderMessage[] = [
-    { role: "user", content: [{ type: "text", text: options.prompt }] },
+    { role: "user", content: initialContent },
   ];
   const text: string[] = [];
   const requestIds: string[] = [];
