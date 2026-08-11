@@ -41,7 +41,7 @@ Useful commands:
 npm run dev -- skills list
 npm run dev -- skills doctor
 npm run dev -- --debug "I'm new to this project"
-npm run dev -- --json "Write release notes from these commits"
+npm run dev -- --json "Write release notes: feat: add export; fix: preserve filenames"
 npm run dev -- "/welcome-me show me around"
 ```
 
@@ -92,7 +92,7 @@ budgets. The current arm64 macOS build measures:
 | --- | ---: |
 | Lite, headless CLI | 129,054 bytes |
 | Full CLI, React UI, skills, and notices | 1,014,404 bytes |
-| Compressed release tarball | 363,673 bytes |
+| Compressed release tarball | 364 KB |
 
 The full build uses the official Anthropic SDK. The lite build uses the same provider
 interface with Node's native `fetch`, which puts it well below 1 MB. Both require
