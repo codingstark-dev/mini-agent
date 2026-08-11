@@ -29,12 +29,16 @@ skill loop through their OpenAI-compatible endpoints:
 export OPENROUTER_API_KEY="your-key"
 npm run dev -- --provider openrouter "I'm new to this project"
 
+# Switch to any OpenRouter model
+npm run dev -- -p openrouter -m deepseek/deepseek-v4-flash "Review this code"
+
 export AI_GATEWAY_API_KEY="your-key"
 npm run dev -- --provider vercel "Write release notes: feat: add export"
 ```
 
-The gateway default is `anthropic/claude-sonnet-4.6`. Choose another model with
-`--model`, or set `MINI_AGENT_PROVIDER` and `MINI_AGENT_MODEL` in your environment.
+The gateway default is `anthropic/claude-sonnet-4.6`. Model IDs are passed through
+to the selected provider, so there is no fixed model list. Choose one with `--model`
+or `-m`, or set `MINI_AGENT_PROVIDER` and `MINI_AGENT_MODEL` in your environment.
 
 There is also a deterministic demo that does not call an API:
 
@@ -102,13 +106,13 @@ npm run check
 npm run pack:release
 ```
 
-`npm run check` runs the type checker, seventeen behavior tests, both builds, and byte
+`npm run check` runs the type checker, eighteen behavior tests, both builds, and byte
 budgets. The current arm64 macOS build measures:
 
 | Artifact | Size |
 | --- | ---: |
-| Lite, headless CLI | 307,412 bytes |
-| Full CLI, React UI, skills, and notices | 1,017,366 bytes |
+| Lite, headless CLI | 307,453 bytes |
+| Full CLI, React UI, skills, and notices | 1,017,407 bytes |
 | Compressed release tarball | about 416 KB |
 
 The full build uses the official Anthropic SDK. The lite build uses Node's native
