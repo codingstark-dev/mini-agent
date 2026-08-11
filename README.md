@@ -115,7 +115,7 @@ budgets. The current arm64 macOS build measures:
 | Artifact | Size |
 | --- | ---: |
 | Lite, headless CLI | 308,378 bytes |
-| Full CLI, React UI, skills, and notices | 1,021,289 bytes |
+| Full CLI, React UI, skills, and notices | 1,021,288 bytes |
 | Compressed release tarball | about 420 KB |
 
 The full build uses the official Anthropic SDK. The lite build uses Node's native
