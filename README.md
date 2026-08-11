@@ -25,11 +25,22 @@ When OpenRouter is selected, press `Ctrl+P` to open the model picker. It fetches
 tool-capable models on demand, supports search and arrow-key navigation, and accepts
 a complete custom `provider/model` ID. The next prompt uses the selected model.
 
+Type `/` to search commands and installed skills, use the arrow keys to choose, and
+press `Tab` to complete. The interface stays inside the current terminal height and
+keeps recent model, skill, tool, and subagent activity visible. Press `Escape` to
+stop the current run without adding a partial turn to the session.
+
 Interactive sessions are saved locally and can be resumed after restarting. Type
 `/help` for the command list. The main commands are `/model`, `/history`, `/resume`,
-`/rewind`, `/undo`, `/redo`, `/new`, `/skills`, `/status`, and `/activity`.
+`/rewind`, `/undo`, `/redo`, `/new`, `/skills`, `/tools`, `/status`, and `/activity`.
 Rewind affects conversation context only and restores the removed prompt for editing;
 it never claims to restore files.
+
+The agent can list, search, read, write, and precisely edit files inside one workspace.
+Search uses `rg` without a shell, and every path is checked against the workspace root,
+including symlink targets. The current directory is writable by default; use
+`--workspace <path>` to choose another root or `--read-only` to hide the mutating
+tools. `/tools` shows the active permission and available tools.
 
 Anthropic is the default. OpenRouter and Vercel AI Gateway use the same agent and
 skill loop through their OpenAI-compatible endpoints:
@@ -53,6 +64,9 @@ There is also a deterministic demo that does not call an API:
 
 ```bash
 npm run demo:mock
+
+# Offline proof of the real write_file tool loop
+npm run dev -- --mock --workspace /tmp/mini-agent-demo "Create an HTML page"
 ```
 
 Example prompts:
@@ -92,6 +106,7 @@ CLI or Ink UI
       │     ├── activate_skill
       │     └── read_skill_resource
       ├── bounded subagent requests
+      ├── workspace tools ─── list, rg search, read, write, edit
       └── activity events
 
   session store ─── history, resume, rewind, redo
@@ -103,6 +118,7 @@ src/agent/               model and tool loop
 src/providers/           official SDK and lightweight API adapters
 src/session/             atomic local history and rewind state
 src/skills/              discovery, validation, activation, resources
+src/tools/               workspace boundary and file tools
 src/ui/                  React/Ink interface
 tests/                   behavior at the public seams
 scripts/                 build, size, and release checks
@@ -124,14 +140,14 @@ npm run check
 npm run pack:release
 ```
 
-`npm run check` runs the type checker, twenty-five behavior tests, both builds, and byte
+`npm run check` runs the type checker, thirty-five behavior tests, both builds, and byte
 budgets. The current arm64 macOS build measures:
 
 | Artifact | Size |
 | --- | ---: |
-| Lite, headless CLI | 311,207 bytes |
-| Full CLI, React UI, skills, and notices | 1,034,885 bytes |
-| Compressed release tarball | about 423 KB |
+| Lite, headless CLI | 320,262 bytes |
+| Full CLI, React UI, skills, and notices | 1,050,281 bytes |
+| Compressed release tarball | 430,839 bytes |
 
 The full build uses the official Anthropic SDK. The lite build uses Node's native
 `fetch` for every provider, which keeps it well below 1 MB. Both require an installed
@@ -142,8 +158,9 @@ The deterministic suite exercises the complete selection loop without credential
 A live Sonnet smoke test was not run in the build environment because provider
 credentials were unavailable.
 
-The terminal was also exercised at 80×24 for model selection, command help, session
-resume, visible activity, undo, redo, restored drafts, and modal cancellation.
+The terminal was also exercised at 80×24 for slash completion, model selection,
+fixed-height rendering, session controls, persistent activity rows, the token bar,
+workspace tool creation, and modal cancellation.
 
 ## Submission notes
 
@@ -153,7 +170,8 @@ packaging.
 The part I paid most attention to was proving that instructions are absent before
 activation, rather than merely claiming they are loaded lazily. Resource-backed
 skills also needed a narrow file boundary so `..`, absolute paths, and symlink escapes
-cannot read outside the active skill. The lite and full builds use separate Claude
+cannot read outside the active skill. Workspace file tools use the same boundary and
+do not expose an unrestricted shell. The lite and full builds use separate Claude
 adapters so the React UI and SDK do not consume the headless size budget.
 
 I kept the submission focused on the requested Node CLI, Sonnet, and Agent Skills
