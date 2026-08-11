@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { resolve } from "node:path";
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path, { resolve } from "node:path";
 import test from "node:test";
 
 interface CliResult {
@@ -27,8 +29,10 @@ function runCli(arguments_: string[], environment: NodeJS.ProcessEnv): Promise<C
 }
 
 test("OpenRouter selection asks for its own API key", async () => {
+  const stateDirectory = await mkdtemp(path.join(tmpdir(), "mini-agent-cli-"));
   const result = await runCli(["--provider", "openrouter", "hello"], {
     ...process.env,
+    MINI_AGENT_STATE_DIR: stateDirectory,
     OPENROUTER_API_KEY: "",
   });
 
@@ -37,8 +41,10 @@ test("OpenRouter selection asks for its own API key", async () => {
 });
 
 test("Vercel AI Gateway selection asks for its own API key", async () => {
+  const stateDirectory = await mkdtemp(path.join(tmpdir(), "mini-agent-cli-"));
   const result = await runCli(["--provider", "vercel", "hello"], {
     ...process.env,
+    MINI_AGENT_STATE_DIR: stateDirectory,
     AI_GATEWAY_API_KEY: "",
   });
 

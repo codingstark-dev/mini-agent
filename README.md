@@ -23,9 +23,10 @@ npm run dev -- "I'm new to this project, what should I do?"
 Running `npm run dev` without a prompt opens the React/Ink terminal interface.
 If the selected provider has no key, the interface still opens. Run `/key`, choose
 a provider, confirm or edit its model ID, and enter the key in the masked prompt.
-The provider and model become active and are saved with the session. Environment
-variables take precedence over locally saved keys. Saved keys live outside sessions
-in an owner-readable-only state file.
+The provider and model become active, are saved with the session, and are restored
+the next time the interface starts. Explicit command-line options and environment
+settings still take precedence. Environment API keys take precedence over locally
+saved keys, which live outside sessions in an owner-readable-only state file.
 When OpenRouter is selected, press `Ctrl+P` to open the model picker. It fetches
 tool-capable models on demand, supports search and arrow-key navigation, and accepts
 a complete custom `provider/model` ID. The next prompt uses the selected model.
@@ -187,14 +188,14 @@ npm run check
 npm run pack:release
 ```
 
-`npm run check` runs the type checker, forty-nine behavior tests, both builds, and byte
+`npm run check` runs the type checker, fifty-one behavior tests, both builds, and byte
 budgets. The current arm64 macOS build measures:
 
 | Artifact | Size |
 | --- | ---: |
-| Lite, headless CLI | 149,155 bytes |
-| Full CLI, React UI, skills, roles, and notices | 898,059 bytes |
-| Compressed release tarball | 343,040 bytes |
+| Lite, headless CLI | 151,327 bytes |
+| Full CLI, React UI, skills, roles, and notices | 899,986 bytes |
+| Compressed release tarball | 344,111 bytes |
 
 Every provider uses Node's native `fetch`, keeping both builds below 1 MB. Both require
 an installed Node runtime; neither measurement hides an embedded standalone runtime.

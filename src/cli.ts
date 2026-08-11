@@ -12,6 +12,8 @@ import {
 import { CredentialStore } from "./providers/credentials.js";
 import { DemoProvider } from "./providers/mock.js";
 import { fetchOpenRouterModels } from "./providers/openrouter-models.js";
+import { SessionStore } from "./session/session-store.js";
+import { resolveStartupSelection } from "./session/startup-selection.js";
 import { discoverSkills } from "./skills/discovery.js";
 import { defaultSkillScopes } from "./skills/scopes.js";
 import { createWorkspaceTools, type WorkspaceMode } from "./tools/workspace.js";
@@ -27,6 +29,7 @@ interface Options {
   mock: boolean;
   model: string;
   provider: ProviderName;
+  selectionExplicit: boolean;
   maxSubagents: number;
   workspace: string;
   workspaceMode: WorkspaceMode;
@@ -40,6 +43,7 @@ function parseArguments(arguments_: string[]): Options {
   let mock = false;
   let model = process.env.MINI_AGENT_MODEL;
   let provider = parseProviderName(process.env.MINI_AGENT_PROVIDER ?? "anthropic");
+  let selectionExplicit = Boolean(process.env.MINI_AGENT_MODEL || process.env.MINI_AGENT_PROVIDER);
   let maxSubagents = Number(process.env.MINI_AGENT_SUBAGENTS ?? 2);
   let workspace = process.env.MINI_AGENT_WORKSPACE ?? process.cwd();
   let workspaceMode: WorkspaceMode = process.env.MINI_AGENT_READ_ONLY === "1" ? "read-only" : "workspace-write";
@@ -54,12 +58,14 @@ function parseArguments(arguments_: string[]): Options {
       const value = arguments_[index + 1];
       if (!value) throw new Error("--provider requires a value");
       provider = parseProviderName(value);
+      selectionExplicit = true;
       index += 1;
     }
     else if (argument === "--model" || argument === "-m") {
       const value = arguments_[index + 1];
       if (!value) throw new Error("--model requires a value");
       model = value;
+      selectionExplicit = true;
       index += 1;
     } else if (argument === "--subagents") {
       const value = arguments_[index + 1];
@@ -94,6 +100,7 @@ function parseArguments(arguments_: string[]): Options {
     mock,
     model: model ?? defaultModelFor(provider),
     provider,
+    selectionExplicit,
     maxSubagents,
     workspace,
     workspaceMode,
@@ -141,20 +148,27 @@ async function main(): Promise<void> {
       return;
     }
 
-    const environmentKey = providerEnvironmentKey(options.provider);
+    const selection = options.mock
+      ? { provider: options.provider, model: options.model }
+      : await resolveStartupSelection(
+          { provider: options.provider, model: options.model },
+          new SessionStore(),
+          !options.selectionExplicit,
+        );
+    const environmentKey = providerEnvironmentKey(selection.provider);
     const needsApiKey = !options.mock && !process.env[environmentKey];
     const provider = options.mock
       ? new DemoProvider()
       : needsApiKey
-        ? createSetupRequiredProvider(options.provider)
-        : createProvider(options.provider, options.model);
+        ? createSetupRequiredProvider(selection.provider)
+        : createProvider(selection.provider, selection.model);
     const { startInteractive } = await import("./ui/start.js");
     await startInteractive({
       catalog,
       provider,
-      providerName: options.provider,
-      model: options.mock ? "offline demo" : options.model,
-      providerLabel: options.mock ? "Demo" : providerLabel(options.provider),
+      providerName: selection.provider,
+      model: options.mock ? "offline demo" : selection.model,
+      providerLabel: options.mock ? "Demo" : providerLabel(selection.provider),
       maxSubagents: options.maxSubagents,
       workspaceTools,
       persistSessions: !options.mock,
