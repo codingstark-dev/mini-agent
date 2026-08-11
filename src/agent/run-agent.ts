@@ -24,6 +24,7 @@ export type AgentEvent =
   | { type: "model_request"; turn: number }
   | { type: "model_response"; turn: number; stopReason: string }
   | { type: "skill_activated"; name: string }
+  | { type: "resource_read"; skill: string; path: string }
   | { type: "complete"; turns: number };
 
 export interface RunAgentOptions {
@@ -175,11 +176,13 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentResult> {
         const skill = requested ? active.get(requested.skill) : undefined;
         try {
           if (!requested || !skill) throw new Error("Resource reads require an active skill and relative path");
+          const content = await readSkillResource(skill, requested.path);
           results.push({
             type: "tool_result",
             toolUseId: call.id,
-            content: await readSkillResource(skill, requested.path),
+            content,
           } satisfies ToolResultBlock);
+          options.onEvent?.({ type: "resource_read", skill: requested.skill, path: requested.path });
         } catch (error) {
           results.push({
             type: "tool_result",

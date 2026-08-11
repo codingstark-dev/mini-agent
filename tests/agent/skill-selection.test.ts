@@ -166,12 +166,19 @@ test("an activated skill can load one referenced resource", async () => {
   await writeFile(path.join(skillDirectory, "examples", "status.md"), "RESOURCE CONTENT");
   const catalog = await discoverSkills([{ directory: root, source: "project" }]);
   const provider = new ResourceProvider();
+  const events: AgentEvent[] = [];
 
-  const result = await runAgent({ prompt: "Write a status report", catalog, provider });
+  const result = await runAgent({
+    prompt: "Write a status report",
+    catalog,
+    provider,
+    onEvent: (event) => { events.push(event); },
+  });
 
   assert.equal(result.text, "Update ready.");
   assert.equal(JSON.stringify(provider.requests[0]).includes("RESOURCE CONTENT"), false);
   assert.equal(JSON.stringify(provider.requests[2]?.messages).includes("RESOURCE CONTENT"), true);
+  assert.equal(events.some((event) => event.type === "resource_read"), true);
 });
 
 test("a slash command activates a known skill before the first model turn", async () => {
