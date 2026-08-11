@@ -71,7 +71,20 @@ async function main(): Promise<void> {
     return;
   }
   if (!options.prompt) {
-    printHelp();
+    if (!process.stdin.isTTY || !process.stdout.isTTY) {
+      printHelp();
+      return;
+    }
+
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!options.mock && !apiKey) {
+      throw new Error("Set ANTHROPIC_API_KEY or use --mock for the offline demo.");
+    }
+    const provider = options.mock
+      ? new DemoProvider()
+      : new AnthropicProvider({ apiKey: apiKey as string, model: options.model });
+    const { startInteractive } = await import("./ui/start.js");
+    await startInteractive({ catalog, provider, model: options.mock ? "offline demo" : options.model });
     return;
   }
 
