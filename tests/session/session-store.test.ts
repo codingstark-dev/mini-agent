@@ -4,7 +4,11 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { SessionStore, type AgentSession } from "../../src/session/session-store.js";
+import {
+  rewindSession,
+  SessionStore,
+  type AgentSession,
+} from "../../src/session/session-store.js";
 
 test("a saved session can be listed and resumed", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "mini-agent-sessions-"));
@@ -41,4 +45,39 @@ test("a saved session can be listed and resumed", async () => {
       turnCount: 1,
     },
   ]);
+});
+
+test("rewind returns the chosen conversation point without mutating history", () => {
+  const session: AgentSession = {
+    version: 1,
+    id: "session-one",
+    createdAt: "2026-08-11T10:00:00.000Z",
+    updatedAt: "2026-08-11T10:02:00.000Z",
+    provider: "openrouter",
+    model: "deepseek/deepseek-v4-flash",
+    turns: [
+      {
+        id: "turn-one",
+        prompt: "First prompt",
+        answer: "First answer",
+        activations: [],
+        activity: [],
+        createdAt: "2026-08-11T10:01:00.000Z",
+      },
+      {
+        id: "turn-two",
+        prompt: "Second prompt",
+        answer: "Second answer",
+        activations: [],
+        activity: [],
+        createdAt: "2026-08-11T10:02:00.000Z",
+      },
+    ],
+  };
+
+  const rewound = rewindSession(session, 1, new Date("2026-08-11T10:03:00.000Z"));
+
+  assert.deepEqual(rewound.turns.map((turn) => turn.id), ["turn-one"]);
+  assert.equal(rewound.updatedAt, "2026-08-11T10:03:00.000Z");
+  assert.equal(session.turns.length, 2);
 });

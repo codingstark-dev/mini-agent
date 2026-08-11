@@ -75,6 +75,21 @@ export function createSession(provider: ProviderName, model: string, now = new D
   };
 }
 
+export function rewindSession(
+  session: AgentSession,
+  keepTurns: number,
+  now = new Date(),
+): AgentSession {
+  if (!Number.isInteger(keepTurns) || keepTurns < 0 || keepTurns > session.turns.length) {
+    throw new Error(`Cannot rewind session to ${keepTurns} turns`);
+  }
+  return {
+    ...session,
+    turns: session.turns.slice(0, keepTurns),
+    updatedAt: now.toISOString(),
+  };
+}
+
 export class SessionStore {
   constructor(private readonly directory = defaultSessionDirectory()) {}
 
