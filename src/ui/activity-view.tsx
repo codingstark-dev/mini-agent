@@ -60,6 +60,15 @@ export function activityItems(events: readonly AgentEvent[]): ActivityItem[] {
           status: event.passed ? "complete" : "failed",
         });
         break;
+      case "tool_repair":
+        replaceOrAppend(items, {
+          id: `repair:${event.name}`,
+          label: event.disabled
+            ? `${event.name} disabled after repeated invalid calls`
+            : `repairing ${event.name} arguments`,
+          status: event.disabled ? "failed" : "info",
+        });
+        break;
       case "workspace_tool_started":
         replaceOrAppend(items, { id: `tool:${event.id}`, label: event.detail, status: "running" });
         break;

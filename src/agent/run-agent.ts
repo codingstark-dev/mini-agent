@@ -34,6 +34,7 @@ export type AgentEvent =
   | { type: "workflow_role_started"; id: string; role: string }
   | { type: "workflow_role_completed"; id: string; role: string }
   | { type: "workflow_verification"; id: string; passed: boolean; detail: string }
+  | { type: "tool_repair"; name: string; attempt: number; disabled: boolean }
   | { type: "workspace_tool_started"; id: string; name: string; detail: string }
   | { type: "workspace_tool_completed"; id: string; name: string; detail: string }
   | { type: "workspace_tool_failed"; id: string; name: string; detail: string; message: string }
@@ -70,7 +71,7 @@ export function buildSystemPrompt(
   const workspaceGuidance = hasWorkspaceTools
     ? " When the user asks you to inspect or change project files, use the workspace tools instead of guessing. After a change, report the paths you changed."
     : "";
-  const introduction = `You are a concise coding assistant. Answer the user's request directly.${workspaceGuidance}${systemGuidance ? `\n\n${systemGuidance}` : ""}`;
+  const introduction = `You are a concise coding assistant. Answer the user's request directly. For simple questions, answer directly without delegating. Subagents have no tools or external access; use them only for bounded analysis that can be completed from the supplied context.${workspaceGuidance}${systemGuidance ? `\n\n${systemGuidance}` : ""}`;
   if (catalog.skills.length === 0) return introduction;
 
   const skills = catalog.skills
@@ -205,21 +206,48 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentResult> {
   ];
   const requestIds: string[] = [];
   const usage: ProviderUsage = { inputTokens: 0, outputTokens: 0 };
-  const maxTurns = options.maxTurns ?? 6;
   const maxSubagents = Math.max(0, Math.floor(options.maxSubagents ?? 2));
+  const maxTurns = options.maxTurns ?? Math.max(6, maxSubagents + 4);
   let subagentsUsed = 0;
+  const disabledTools = new Set<string>();
+  const toolFailures = new Map<string, number>();
+
+  function repairToolFailure(
+    call: ToolUseBlock,
+    message: string,
+    tool: ProviderTool | undefined,
+  ): ToolResultBlock {
+    const signature = `${call.name}:${JSON.stringify(call.input)}`;
+    const attempt = (toolFailures.get(signature) ?? 0) + 1;
+    toolFailures.set(signature, attempt);
+    const disabled = attempt >= 2;
+    if (disabled) disabledTools.add(call.name);
+    options.onEvent?.({ type: "tool_repair", name: call.name, attempt, disabled });
+    const guidance = disabled
+      ? `The same invalid call was repeated, so ${call.name} is disabled for this run. Continue without it or explain the limitation.`
+      : tool
+        ? `Repair the arguments and retry once using this schema: ${JSON.stringify(tool.inputSchema)}`
+        : "Use one of the tools currently provided, or answer without a tool.";
+    return {
+      type: "tool_result",
+      toolUseId: call.id,
+      content: `${message} ${guidance}`,
+      isError: true,
+    };
+  }
 
   for (let turn = 0; turn < maxTurns; turn += 1) {
+    const availableTools = [
+      ...activationTool(options.catalog.skills),
+      ...resourceTool(active),
+      ...delegationTool(maxSubagents - subagentsUsed),
+      ...(options.workspaceTools?.tools ?? []),
+    ].filter((tool) => !disabledTools.has(tool.name));
     options.onEvent?.({ type: "model_request", turn: turn + 1 });
     const response = await options.provider.complete({
       system: buildSystemPrompt(options.catalog, Boolean(options.workspaceTools), options.systemGuidance),
       messages,
-      tools: [
-        ...activationTool(options.catalog.skills),
-        ...resourceTool(active),
-        ...delegationTool(maxSubagents),
-        ...(options.workspaceTools?.tools ?? []),
-      ],
+      tools: availableTools,
       ...(options.signal ? { signal: options.signal } : {}),
     });
     addUsage(usage, response.usage);
@@ -269,12 +297,11 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentResult> {
           });
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
-          results.push({
-            type: "tool_result",
-            toolUseId: call.id,
-            content: message,
-            isError: true,
-          } satisfies ToolResultBlock);
+          results.push(repairToolFailure(
+            call,
+            message,
+            availableTools.find((tool) => tool.name === call.name),
+          ));
           options.onEvent?.({ type: "workspace_tool_failed", id: call.id, name: call.name, detail, message });
         }
         continue;
@@ -283,12 +310,11 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentResult> {
       if (call.name === "delegate_task") {
         const requested = requestedDelegation(call);
         if (!requested) {
-          results.push({
-            type: "tool_result",
-            toolUseId: call.id,
-            content: "Subagent delegation requires a role and a self-contained task.",
-            isError: true,
-          } satisfies ToolResultBlock);
+          results.push(repairToolFailure(
+            call,
+            "Subagent delegation requires a role and a self-contained task.",
+            availableTools.find((tool) => tool.name === call.name),
+          ));
           continue;
         }
         if (subagentsUsed >= maxSubagents) {
@@ -364,35 +390,28 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentResult> {
           } satisfies ToolResultBlock);
           options.onEvent?.({ type: "resource_read", skill: requested.skill, path: requested.path });
         } catch (error) {
-          results.push({
-            type: "tool_result",
-            toolUseId: call.id,
-            content: error instanceof Error ? error.message : String(error),
-            isError: true,
-          } satisfies ToolResultBlock);
+          results.push(repairToolFailure(
+            call,
+            error instanceof Error ? error.message : String(error),
+            availableTools.find((tool) => tool.name === call.name),
+          ));
         }
         continue;
       }
 
       if (call.name !== "activate_skill") {
-        results.push({
-          type: "tool_result",
-          toolUseId: call.id,
-          content: `Unknown tool: ${call.name}`,
-          isError: true,
-        } satisfies ToolResultBlock);
+        results.push(repairToolFailure(call, `Unknown tool: ${call.name}.`, undefined));
         continue;
       }
 
       const name = requestedSkill(call);
       const summary = name ? skills.get(name) : undefined;
       if (!name || !summary) {
-        results.push({
-          type: "tool_result",
-          toolUseId: call.id,
-          content: "Skill name is not in the available catalog.",
-          isError: true,
-        } satisfies ToolResultBlock);
+        results.push(repairToolFailure(
+          call,
+          "Skill name is not in the available catalog.",
+          availableTools.find((tool) => tool.name === call.name),
+        ));
         continue;
       }
 

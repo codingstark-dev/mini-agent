@@ -7,6 +7,7 @@ import test from "node:test";
 import { runAgent, type AgentEvent } from "../../src/agent/run-agent.js";
 import type { Provider, ProviderRequest, ProviderResponse } from "../../src/providers/types.js";
 import { discoverSkills } from "../../src/skills/discovery.js";
+import { createWorkspaceTools } from "../../src/tools/workspace.js";
 
 class WelcomeProvider implements Provider {
   readonly requests: ProviderRequest[] = [];
@@ -115,6 +116,52 @@ class DelegatingProvider implements Provider {
   }
 }
 
+class SerialDelegatingProvider implements Provider {
+  mainCalls = 0;
+
+  async complete(request: ProviderRequest): Promise<ProviderResponse> {
+    if (request.system.includes("focused reviewer subagent")) {
+      return { content: [{ type: "text", text: "Subagent finding." }], stopReason: "end_turn" };
+    }
+    if (request.tools.some((tool) => tool.name === "delegate_task")) {
+      this.mainCalls += 1;
+      return {
+        content: [{
+          type: "tool_use",
+          id: `delegate-${this.mainCalls}`,
+          name: "delegate_task",
+          input: { role: "reviewer", task: `Review part ${this.mainCalls}.` },
+        }],
+        stopReason: "tool_use",
+      };
+    }
+    return { content: [{ type: "text", text: "All six reviews are complete." }], stopReason: "end_turn" };
+  }
+}
+
+class RepeatingBrokenToolProvider implements Provider {
+  calls = 0;
+
+  async complete(request: ProviderRequest): Promise<ProviderResponse> {
+    this.calls += 1;
+    if (request.tools.some((tool) => tool.name === "read_file")) {
+      return {
+        content: [{
+          type: "tool_use",
+          id: `broken-read-${this.calls}`,
+          name: "read_file",
+          input: {},
+        }],
+        stopReason: "tool_use",
+      };
+    }
+    return {
+      content: [{ type: "text", text: "I could not read a file without a path." }],
+      stopReason: "end_turn",
+    };
+  }
+}
+
 test("the main agent can delegate an isolated task to a bounded subagent", async () => {
   const catalog = await discoverSkills([]);
   const provider = new DelegatingProvider();
@@ -134,6 +181,36 @@ test("the main agent can delegate an isolated task to a bounded subagent", async
   assert.match(JSON.stringify(provider.requests[2]?.messages), /provider boundary is narrow and typed/);
   assert.equal(events.some((event) => event.type === "subagent_started"), true);
   assert.equal(events.some((event) => event.type === "subagent_completed"), true);
+});
+
+test("the agent turn budget scales with serial subagent work", async () => {
+  const provider = new SerialDelegatingProvider();
+
+  const result = await runAgent({
+    prompt: "Run six focused reviews",
+    catalog: { skills: [], diagnostics: [] },
+    provider,
+    maxSubagents: 6,
+  });
+
+  assert.equal(result.text, "All six reviews are complete.");
+  assert.equal(provider.mainCalls, 6);
+});
+
+test("a repeated invalid tool call is disabled instead of exhausting the run", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "mini-agent-tool-repair-"));
+  const provider = new RepeatingBrokenToolProvider();
+
+  const result = await runAgent({
+    prompt: "Read the requested file",
+    catalog: { skills: [], diagnostics: [] },
+    provider,
+    maxSubagents: 0,
+    workspaceTools: await createWorkspaceTools(root, "read-only"),
+  });
+
+  assert.equal(result.text, "I could not read a file without a path.");
+  assert.equal(provider.calls, 3);
 });
 
 test("previous session turns are included in the next model request", async () => {
@@ -204,6 +281,7 @@ test("an unrelated prompt does not load the welcome skill", async () => {
 
   assert.deepEqual(result.activations, []);
   assert.equal(provider.requests.length, 1);
+  assert.match(provider.requests[0]?.system ?? "", /For simple questions, answer directly/);
   assert.equal(JSON.stringify(provider.requests).includes("PRIVATE WELCOME INSTRUCTIONS"), false);
 });
 
