@@ -75,6 +75,33 @@ class TruncatedProvider implements Provider {
   }
 }
 
+class HistoryProvider implements Provider {
+  request?: ProviderRequest;
+
+  async complete(request: ProviderRequest): Promise<ProviderResponse> {
+    this.request = structuredClone(request);
+    return { content: [{ type: "text", text: "Second answer" }], stopReason: "end_turn" };
+  }
+}
+
+test("previous session turns are included in the next model request", async () => {
+  const catalog = await discoverSkills([]);
+  const provider = new HistoryProvider();
+
+  await runAgent({
+    prompt: "What should we do next?",
+    history: [{ prompt: "Summarize the task", answer: "We need to build a small CLI." }],
+    catalog,
+    provider,
+  });
+
+  assert.deepEqual(provider.request?.messages, [
+    { role: "user", content: [{ type: "text", text: "Summarize the task" }] },
+    { role: "assistant", content: [{ type: "text", text: "We need to build a small CLI." }] },
+    { role: "user", content: [{ type: "text", text: "What should we do next?" }] },
+  ]);
+});
+
 test("the model can select a skill without seeing its instructions up front", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "mini-agent-loop-"));
   const skillDirectory = path.join(root, "welcome-me");

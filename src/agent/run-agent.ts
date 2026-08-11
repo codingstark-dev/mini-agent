@@ -15,8 +15,14 @@ export interface AgentResult {
   requestIds: string[];
 }
 
+export interface ConversationTurn {
+  prompt: string;
+  answer: string;
+}
+
 export interface RunAgentOptions {
   prompt: string;
+  history?: ConversationTurn[];
   catalog: SkillCatalog;
   provider: Provider;
   maxTurns?: number;
@@ -116,6 +122,10 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentResult> {
     initialContent.push({ type: "text", text: options.prompt });
   }
   const messages: ProviderMessage[] = [
+    ...(options.history ?? []).flatMap<ProviderMessage>((turn) => [
+      { role: "user", content: [{ type: "text", text: turn.prompt }] },
+      { role: "assistant", content: [{ type: "text", text: turn.answer }] },
+    ]),
     { role: "user", content: initialContent },
   ];
   const requestIds: string[] = [];
