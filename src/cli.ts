@@ -128,13 +128,13 @@ async function main(): Promise<void> {
   }
   const workspaceTools = await createWorkspaceTools(options.workspace, options.workspaceMode);
   const credentialStore = new CredentialStore();
-  for (const providerName of ["anthropic", "openrouter", "vercel"] as const) {
+  await Promise.all((["anthropic", "openrouter", "vercel"] as const).map(async (providerName) => {
     const environmentKey = providerEnvironmentKey(providerName);
     if (!process.env[environmentKey]) {
       const stored = await credentialStore.get(providerName);
       if (stored) process.env[environmentKey] = stored;
     }
-  }
+  }));
   if (!options.prompt) {
     if (liteBuild || !process.stdin.isTTY || !process.stdout.isTTY) {
       printHelp();
