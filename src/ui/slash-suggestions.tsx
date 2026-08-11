@@ -17,13 +17,13 @@ export function SlashSuggestions({
   suggestions,
 }: SlashSuggestionsProperties): React.JSX.Element {
   return (
-    <Box borderColor={muted} borderStyle="single" flexDirection="column" paddingX={1}>
+    <Box borderColor={muted} borderStyle="single" flexDirection="column" flexShrink={0} paddingX={1}>
       {suggestions.map((suggestion, index) => (
-        <Box gap={1} key={`${suggestion.kind}:${suggestion.name}`}>
+        <Box gap={1} key={`${suggestion.kind}:${suggestion.name}`} width="100%">
           <Text {...(index === selectedIndex ? { color: accent } : {})}>
             {index === selectedIndex ? "›" : " "} /{suggestion.name}
           </Text>
-          <Text color={muted}>[{suggestion.kind}] {suggestion.description}</Text>
+          <Text color={muted} wrap="truncate-end">[{suggestion.kind}] {suggestion.description}</Text>
         </Box>
       ))}
       <Text color={muted}>↑↓ select · Tab complete · Esc close</Text>

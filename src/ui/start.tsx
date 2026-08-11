@@ -1,5 +1,5 @@
 import React from "react";
-import { Box, Text, render, useApp } from "ink";
+import { Box, Text, render, useApp, useStdout } from "ink";
 
 import type { ProviderName } from "../providers/create.js";
 import type { OpenRouterModel } from "../providers/openrouter-models.js";
@@ -10,6 +10,7 @@ import { ChoicePicker } from "./choice-picker.js";
 import { ModelPicker } from "./model-picker.js";
 import { SlashSuggestions } from "./slash-suggestions.js";
 import { activityLabel, useHarnessController } from "./use-harness.js";
+import { fitRecentTurns } from "./viewport.js";
 
 interface Theme {
   accent: string;
@@ -54,6 +55,7 @@ function TurnView({ turn, showActivity, theme }: {
 
 function App(properties: AppProperties): React.JSX.Element {
   const { exit } = useApp();
+  const { stdout } = useStdout();
   const harness = useHarnessController({
     catalog: properties.catalog,
     provider: properties.provider,
@@ -66,77 +68,103 @@ function App(properties: AppProperties): React.JSX.Element {
     ...(properties.loadModels ? { loadModels: properties.loadModels } : {}),
     ...(properties.sessionStore ? { sessionStore: properties.sessionStore } : {}),
   });
+  const rows = Math.max(12, stdout.rows ?? 24);
+  const columns = Math.max(32, stdout.columns ?? 80);
+  const pickerOpen = harness.modelPickerOpen || Boolean(harness.picker);
+  const panelRows = harness.panel ? harness.panel.split("\n").length + 2 : 0;
+  const suggestionRows = harness.suggestions.length > 0 ? harness.suggestions.length + 3 : 0;
+  const reservedRows = 4 + panelRows + suggestionRows +
+    (harness.notice ? 1 : 0) +
+    (harness.activeSkills.length > 0 ? 1 : 0) +
+    (harness.busy && harness.latestActivity ? 1 : 0);
+  const turnWindow = fitRecentTurns(
+    harness.turns,
+    Math.max(1, rows - reservedRows),
+    columns,
+    harness.showActivity,
+  );
 
   return (
-    <Box flexDirection="column" paddingX={1}>
-      <Box gap={1}>
+    <Box flexDirection="column" height={rows} overflow="hidden" paddingX={1}>
+      <Box flexShrink={0} gap={1}>
         <Text bold color={properties.theme.accent}>mini-agent</Text>
-        <Text color={properties.theme.muted}>{harness.providerLabel} · {harness.model}</Text>
+        <Text color={properties.theme.muted} wrap="truncate-end">{harness.providerLabel} · {harness.model}</Text>
         <Text color={properties.theme.muted}>session {harness.session.id}</Text>
       </Box>
 
-      {harness.notice && <Text color={properties.theme.accent}>{harness.notice}</Text>}
-      {harness.panel && (
-        <Box borderStyle="single" borderColor={properties.theme.muted} paddingX={1}>
-          <Text color={properties.theme.muted}>{harness.panel}</Text>
-        </Box>
-      )}
-      {harness.activeSkills.length > 0 && (
-        <Text color={properties.theme.accent}>active: {harness.activeSkills.join(", ")}</Text>
-      )}
+      <Box flexDirection="column" flexGrow={1} overflow="hidden">
+        {harness.notice && <Text color={properties.theme.accent}>{harness.notice}</Text>}
+        {harness.panel && (
+          <Box borderStyle="single" borderColor={properties.theme.muted} paddingX={1}>
+            <Text color={properties.theme.muted}>{harness.panel}</Text>
+          </Box>
+        )}
+        {harness.activeSkills.length > 0 && (
+          <Text color={properties.theme.accent}>active: {harness.activeSkills.join(", ")}</Text>
+        )}
 
-      <Box flexDirection="column" marginTop={1}>
-        {harness.turns.map((turn) => (
-          <TurnView
-            key={turn.id}
-            turn={turn}
-            showActivity={harness.showActivity}
-            theme={properties.theme}
+        {harness.modelPickerOpen && properties.loadModels ? (
+          <ModelPicker
+            accent={properties.theme.accent}
+            currentModel={harness.model}
+            loadModels={properties.loadModels}
+            muted={properties.theme.muted}
+            onCancel={harness.closePicker}
+            onSelect={(selected) => { void harness.switchModel(selected); }}
           />
-        ))}
+        ) : harness.picker ? (
+          <ChoicePicker
+            accent={properties.theme.accent}
+            choices={harness.picker.choices}
+            emptyMessage={harness.picker.kind === "history" ? "No saved sessions." : "No turns to rewind."}
+            muted={properties.theme.muted}
+            onCancel={harness.closePicker}
+            onSelect={(id) => { void harness.selectChoice(id); }}
+            title={harness.picker.kind === "history" ? "Session history" : "Rewind conversation"}
+          />
+        ) : (
+          <>
+            <Box flexDirection="column" flexGrow={1} marginTop={1} overflow="hidden">
+              {turnWindow.hidden > 0 && (
+                <Text color={properties.theme.muted}>
+                  ↑ {turnWindow.hidden} earlier turn{turnWindow.hidden === 1 ? "" : "s"} hidden · /history to resume
+                </Text>
+              )}
+              {turnWindow.turns.map((turn) => (
+                <TurnView
+                  key={turn.id}
+                  turn={turn}
+                  showActivity={harness.showActivity}
+                  theme={properties.theme}
+                />
+              ))}
+            </Box>
+            {harness.busy && harness.latestActivity && (
+              <Text color={properties.theme.accent}>◌ {activityLabel(harness.latestActivity)}</Text>
+            )}
+            {!harness.busy && harness.suggestions.length > 0 && (
+              <SlashSuggestions
+                accent={properties.theme.accent}
+                muted={properties.theme.muted}
+                selectedIndex={harness.suggestionIndex}
+                suggestions={harness.suggestions}
+              />
+            )}
+          </>
+        )}
       </Box>
 
-      {harness.modelPickerOpen && properties.loadModels ? (
-        <ModelPicker
-          accent={properties.theme.accent}
-          currentModel={harness.model}
-          loadModels={properties.loadModels}
-          muted={properties.theme.muted}
-          onCancel={harness.closePicker}
-          onSelect={(selected) => { void harness.switchModel(selected); }}
-        />
-      ) : harness.picker ? (
-        <ChoicePicker
-          accent={properties.theme.accent}
-          choices={harness.picker.choices}
-          emptyMessage={harness.picker.kind === "history" ? "No saved sessions." : "No turns to rewind."}
-          muted={properties.theme.muted}
-          onCancel={harness.closePicker}
-          onSelect={(id) => { void harness.selectChoice(id); }}
-          title={harness.picker.kind === "history" ? "Session history" : "Rewind conversation"}
-        />
-      ) : (
-        <>
-          {harness.busy && harness.latestActivity && (
-            <Text color={properties.theme.accent}>◌ {activityLabel(harness.latestActivity)}</Text>
-          )}
-          {!harness.busy && harness.suggestions.length > 0 && (
-            <SlashSuggestions
-              accent={properties.theme.accent}
-              muted={properties.theme.muted}
-              selectedIndex={harness.suggestionIndex}
-              suggestions={harness.suggestions}
-            />
-          )}
+      {!pickerOpen && (
+        <Box flexDirection="column" flexShrink={0}>
           <Box>
             <Text color={properties.theme.prompt}>❯ </Text>
             <Text>{harness.busy ? "working…" : harness.input}</Text>
             {!harness.busy && <Text inverse> </Text>}
           </Box>
-          <Text color={properties.theme.muted}>
+          <Text color={properties.theme.muted} wrap="truncate-end">
             / commands and skills{harness.canPickModels ? " · Ctrl+P models" : ""} · Ctrl+R rewind · Ctrl+C exit
           </Text>
-        </>
+        </Box>
       )}
     </Box>
   );
