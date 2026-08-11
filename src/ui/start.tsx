@@ -6,6 +6,7 @@ import type { OpenRouterModel } from "../providers/openrouter-models.js";
 import type { Provider } from "../providers/types.js";
 import { SessionStore, type SessionTurn } from "../session/session-store.js";
 import type { SkillCatalog } from "../skills/discovery.js";
+import type { WorkspaceTools } from "../tools/workspace.js";
 import { ChoicePicker } from "./choice-picker.js";
 import { ModelPicker } from "./model-picker.js";
 import { SlashSuggestions } from "./slash-suggestions.js";
@@ -33,6 +34,7 @@ interface AppProperties {
   createProvider?: (provider: ProviderName, model: string) => Provider;
   loadModels?: (signal: AbortSignal) => Promise<OpenRouterModel[]>;
   maxSubagents: number;
+  workspaceTools: WorkspaceTools;
   sessionStore?: SessionStore;
   theme: Theme;
 }
@@ -63,6 +65,7 @@ function App(properties: AppProperties): React.JSX.Element {
     providerLabel: properties.providerLabel,
     model: properties.model,
     maxSubagents: properties.maxSubagents,
+    workspaceTools: properties.workspaceTools,
     exit,
     ...(properties.createProvider ? { createProvider: properties.createProvider } : {}),
     ...(properties.loadModels ? { loadModels: properties.loadModels } : {}),
@@ -181,6 +184,7 @@ export interface InteractiveOptions {
   createProvider?: (provider: ProviderName, model: string) => Provider;
   loadModels?: (signal: AbortSignal) => Promise<OpenRouterModel[]>;
   maxSubagents: number;
+  workspaceTools: WorkspaceTools;
   persistSessions?: boolean;
 }
 

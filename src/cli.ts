@@ -11,6 +11,7 @@ import { DemoProvider } from "./providers/mock.js";
 import { fetchOpenRouterModels } from "./providers/openrouter-models.js";
 import { discoverSkills } from "./skills/discovery.js";
 import { defaultSkillScopes } from "./skills/scopes.js";
+import { createWorkspaceTools, type WorkspaceMode } from "./tools/workspace.js";
 
 declare const __MINI_AGENT_LITE__: boolean;
 
@@ -24,6 +25,8 @@ interface Options {
   model: string;
   provider: ProviderName;
   maxSubagents: number;
+  workspace: string;
+  workspaceMode: WorkspaceMode;
   command?: "list" | "doctor";
 }
 
@@ -35,6 +38,8 @@ function parseArguments(arguments_: string[]): Options {
   let model = process.env.MINI_AGENT_MODEL;
   let provider = parseProviderName(process.env.MINI_AGENT_PROVIDER ?? "anthropic");
   let maxSubagents = Number(process.env.MINI_AGENT_SUBAGENTS ?? 2);
+  let workspace = process.env.MINI_AGENT_WORKSPACE ?? process.cwd();
+  let workspaceMode: WorkspaceMode = process.env.MINI_AGENT_READ_ONLY === "1" ? "read-only" : "workspace-write";
   let command: Options["command"];
 
   for (let index = 0; index < arguments_.length; index += 1) {
@@ -58,6 +63,13 @@ function parseArguments(arguments_: string[]): Options {
       if (!value) throw new Error("--subagents requires a value");
       maxSubagents = Number(value);
       index += 1;
+    } else if (argument === "--workspace") {
+      const value = arguments_[index + 1];
+      if (!value) throw new Error("--workspace requires a value");
+      workspace = value;
+      index += 1;
+    } else if (argument === "--read-only") {
+      workspaceMode = "read-only";
     } else if (argument === "skills") {
       const next = arguments_[index + 1];
       if (next !== "list" && next !== "doctor") throw new Error("skills requires list or doctor");
@@ -80,12 +92,14 @@ function parseArguments(arguments_: string[]): Options {
     model: model ?? defaultModelFor(provider),
     provider,
     maxSubagents,
+    workspace,
+    workspaceMode,
     ...(command ? { command } : {}),
   };
 }
 
 function printHelp(): void {
-  process.stdout.write(`mini-agent [options] "prompt"\n\nOptions:\n  -p, --provider <name>  anthropic, openrouter, or vercel\n  -m, --model <id>       any model ID supported by the provider\n      --subagents <n>    delegation limit from 0 to 8 (default: 2)\n      --json             Print structured output\n      --debug            Print skill activations to stderr\n      --mock             Run the deterministic offline demo\n\nCommands:\n  skills list\n  skills doctor\n`);
+  process.stdout.write(`mini-agent [options] "prompt"\n\nOptions:\n  -p, --provider <name>  anthropic, openrouter, or vercel\n  -m, --model <id>       any model ID supported by the provider\n      --workspace <path> project root for file tools (default: current directory)\n      --read-only        hide write and edit tools\n      --subagents <n>    delegation limit from 0 to 8 (default: 2)\n      --json             Print structured output\n      --debug            Print skill activations to stderr\n      --mock             Run the deterministic offline demo\n\nCommands:\n  skills list\n  skills doctor\n`);
 }
 
 async function main(): Promise<void> {
@@ -109,6 +123,7 @@ async function main(): Promise<void> {
     process.exitCode = catalog.diagnostics.some((diagnostic) => diagnostic.level === "error") ? 1 : 0;
     return;
   }
+  const workspaceTools = await createWorkspaceTools(options.workspace, options.workspaceMode);
   if (!options.prompt) {
     if (liteBuild || !process.stdin.isTTY || !process.stdout.isTTY) {
       printHelp();
@@ -127,6 +142,7 @@ async function main(): Promise<void> {
       model: options.mock ? "offline demo" : options.model,
       providerLabel: options.mock ? "Demo" : providerLabel(options.provider),
       maxSubagents: options.maxSubagents,
+      workspaceTools,
       persistSessions: !options.mock,
       ...(!options.mock
         ? {
@@ -156,6 +172,7 @@ async function main(): Promise<void> {
         : createProvider(options.provider, options.model),
       signal: controller.signal,
       maxSubagents: options.maxSubagents,
+      workspaceTools,
       ...(options.debug
         ? { onActivation: (name: string): void => { process.stderr.write(`activated ${name}\n`); } }
         : {}),

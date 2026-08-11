@@ -18,6 +18,7 @@ import {
   type SessionTurn,
 } from "../session/session-store.js";
 import type { SkillCatalog } from "../skills/discovery.js";
+import type { WorkspaceTools } from "../tools/workspace.js";
 import type { Choice } from "./choice-picker.js";
 import {
   isSlashCommand,
@@ -81,6 +82,7 @@ export interface HarnessOptions {
   createProvider?: (provider: ProviderName, model: string) => Provider;
   loadModels?: (signal: AbortSignal) => Promise<OpenRouterModel[]>;
   maxSubagents: number;
+  workspaceTools: WorkspaceTools;
   sessionStore?: SessionStore;
   exit: () => void;
 }
@@ -101,6 +103,12 @@ export function activityLabel(event: AgentEvent): string {
       return `${event.role} subagent complete`;
     case "subagent_failed":
       return `${event.role} subagent failed`;
+    case "workspace_tool_started":
+      return `running ${event.detail}`;
+    case "workspace_tool_completed":
+      return event.detail;
+    case "workspace_tool_failed":
+      return `${event.detail} failed`;
     case "complete":
       return `complete in ${event.turns} call${event.turns === 1 ? "" : "s"}`;
   }
@@ -319,8 +327,17 @@ export function useHarnessController(options: HarnessOptions): HarnessController
       case "skills":
         patch({ panel: options.catalog.skills.map((skill) => skill.name).join(" · ") || "No skills found." });
         return;
+      case "tools":
+        patch({
+          panel: [
+            `workspace ${options.workspaceTools.root}`,
+            `permission ${options.workspaceTools.mode}`,
+            ...options.workspaceTools.tools.map((tool) => `${tool.name}  ${tool.description}`),
+          ].join("\n"),
+        });
+        return;
       case "status":
-        patch({ panel: `session ${state.session.id}\n${state.providerLabel} · ${state.model}\n${state.turns.length} turns · ${options.catalog.skills.length} skills` });
+        patch({ panel: `session ${state.session.id}\n${state.providerLabel} · ${state.model}\n${state.turns.length} turns · ${options.catalog.skills.length} skills\nworkspace ${options.workspaceTools.mode}` });
         return;
       case "activity":
       case "thinking":
@@ -360,6 +377,7 @@ export function useHarnessController(options: HarnessOptions): HarnessController
         provider: state.provider,
         maxSubagents: options.maxSubagents,
         signal: controller.signal,
+        workspaceTools: options.workspaceTools,
         onEvent: (event) => {
           activity.push(event);
           patch({ liveActivity: [...activity] });

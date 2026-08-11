@@ -26,5 +26,8 @@ test("slash suggestions combine executable commands and installed skills", () =>
     { name: "welcome-me", description: "Help a newcomer get started.", kind: "skill" },
   ]);
   assert.deepEqual(slashSuggestions("/model deep", skills), []);
+  assert.deepEqual(slashSuggestions("/to", skills), [
+    { name: "tools", description: "List workspace tools and permissions", kind: "command" },
+  ]);
   assert.deepEqual(slashSuggestions("hello", skills), []);
 });

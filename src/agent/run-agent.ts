@@ -8,6 +8,7 @@ import type {
   ToolResultBlock,
   ToolUseBlock,
 } from "../providers/types.js";
+import type { WorkspaceTools } from "../tools/workspace.js";
 
 export interface AgentResult {
   text: string;
@@ -28,6 +29,9 @@ export type AgentEvent =
   | { type: "subagent_started"; id: string; role: string; task: string }
   | { type: "subagent_completed"; id: string; role: string }
   | { type: "subagent_failed"; id: string; role: string; message: string }
+  | { type: "workspace_tool_started"; name: string; detail: string }
+  | { type: "workspace_tool_completed"; name: string; detail: string }
+  | { type: "workspace_tool_failed"; name: string; detail: string; message: string }
   | { type: "complete"; turns: number };
 
 export interface RunAgentOptions {
@@ -37,6 +41,7 @@ export interface RunAgentOptions {
   provider: Provider;
   maxTurns?: number;
   maxSubagents?: number;
+  workspaceTools?: WorkspaceTools;
   signal?: AbortSignal;
   onActivation?: (name: string) => void;
   onEvent?: (event: AgentEvent) => void;
@@ -51,8 +56,11 @@ function escapeXml(value: string): string {
     .replaceAll("'", "&apos;");
 }
 
-export function buildSystemPrompt(catalog: SkillCatalog): string {
-  const introduction = "You are a concise coding assistant. Answer the user's request directly.";
+export function buildSystemPrompt(catalog: SkillCatalog, hasWorkspaceTools = false): string {
+  const workspaceGuidance = hasWorkspaceTools
+    ? " When the user asks you to inspect or change project files, use the workspace tools instead of guessing. After a change, report the paths you changed."
+    : "";
+  const introduction = `You are a concise coding assistant. Answer the user's request directly.${workspaceGuidance}`;
   if (catalog.skills.length === 0) return introduction;
 
   const skills = catalog.skills
@@ -144,6 +152,17 @@ function requestedDelegation(call: ToolUseBlock): { role: string; task: string }
     : undefined;
 }
 
+function workspaceToolDetail(call: ToolUseBlock): string {
+  if (!call.input || typeof call.input !== "object") return call.name;
+  const input = call.input as Record<string, unknown>;
+  const target = typeof input.path === "string"
+    ? input.path
+    : typeof input.pattern === "string"
+      ? input.pattern
+      : "workspace";
+  return `${call.name} ${target}`;
+}
+
 export async function runAgent(options: RunAgentOptions): Promise<AgentResult> {
   const skills = new Map(options.catalog.skills.map((skill) => [skill.name, skill]));
   const active = new Map<string, ActivatedSkill>();
@@ -176,12 +195,13 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentResult> {
   for (let turn = 0; turn < maxTurns; turn += 1) {
     options.onEvent?.({ type: "model_request", turn: turn + 1 });
     const response = await options.provider.complete({
-      system: buildSystemPrompt(options.catalog),
+      system: buildSystemPrompt(options.catalog, Boolean(options.workspaceTools)),
       messages,
       tools: [
         ...activationTool(options.catalog.skills),
         ...resourceTool(active),
         ...delegationTool(maxSubagents),
+        ...(options.workspaceTools?.tools ?? []),
       ],
       ...(options.signal ? { signal: options.signal } : {}),
     });
@@ -208,6 +228,34 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentResult> {
 
     const results: ProviderContent[] = [];
     for (const call of calls) {
+      if (options.workspaceTools?.tools.some((tool) => tool.name === call.name)) {
+        const detail = workspaceToolDetail(call);
+        options.onEvent?.({ type: "workspace_tool_started", name: call.name, detail });
+        try {
+          const executed = await options.workspaceTools.execute(call.name, call.input, options.signal);
+          results.push({
+            type: "tool_result",
+            toolUseId: call.id,
+            content: executed.content,
+          } satisfies ToolResultBlock);
+          options.onEvent?.({
+            type: "workspace_tool_completed",
+            name: call.name,
+            detail: executed.summary,
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          results.push({
+            type: "tool_result",
+            toolUseId: call.id,
+            content: message,
+            isError: true,
+          } satisfies ToolResultBlock);
+          options.onEvent?.({ type: "workspace_tool_failed", name: call.name, detail, message });
+        }
+        continue;
+      }
+
       if (call.name === "delegate_task") {
         const requested = requestedDelegation(call);
         if (!requested) {

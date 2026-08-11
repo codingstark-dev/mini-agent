@@ -32,6 +32,7 @@ export const slashCommands: readonly SlashCommandDefinition[] = [
   { name: "redo", usage: "/redo", description: "Restore rewound turns" },
   { name: "new", usage: "/new", description: "Start a new session" },
   { name: "skills", usage: "/skills", description: "List installed skills" },
+  { name: "tools", usage: "/tools", description: "List workspace tools and permissions" },
   { name: "status", usage: "/status", description: "Show session details" },
   { name: "activity", usage: "/activity", description: "Show or hide agent activity" },
   { name: "thinking", usage: "/thinking", description: "Show or hide agent activity" },
