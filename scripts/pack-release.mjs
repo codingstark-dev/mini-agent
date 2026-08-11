@@ -18,6 +18,7 @@ await Promise.all([
 await Promise.all([
   cp("dist", path.join(releaseDirectory, "dist"), { recursive: true }),
   cp(".skills", path.join(releaseDirectory, ".skills"), { recursive: true }),
+  cp("agents", path.join(releaseDirectory, "agents"), { recursive: true }),
   cp("README.md", path.join(releaseDirectory, "README.md")),
   cp("LICENSE", path.join(releaseDirectory, "LICENSE")),
   cp("THIRD_PARTY_NOTICES.md", path.join(releaseDirectory, "THIRD_PARTY_NOTICES.md")),
@@ -29,7 +30,7 @@ const releasePackage = {
   description: sourcePackage.description,
   type: "module",
   bin: { "mini-agent": "dist/cli.mjs" },
-  files: ["dist", ".skills", "LICENSE", "README.md", "THIRD_PARTY_NOTICES.md"],
+  files: ["dist", ".skills", "agents", "LICENSE", "README.md", "THIRD_PARTY_NOTICES.md"],
   engines: sourcePackage.engines,
   license: "MIT",
   repository: "https://github.com/codingstark-dev/mini-agent",

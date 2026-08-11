@@ -13,7 +13,10 @@ async function bytesIn(target) {
 
 const liteBytes = await bytesIn("dist/lite.mjs");
 const fullBytes =
-  (await bytesIn("dist")) - liteBytes + (await bytesIn(".skills")) + (await bytesIn("THIRD_PARTY_NOTICES.md"));
+  (await bytesIn("dist")) - liteBytes +
+  (await bytesIn(".skills")) +
+  (await bytesIn("agents")) +
+  (await bytesIn("THIRD_PARTY_NOTICES.md"));
 
 process.stdout.write(`lite bundle: ${liteBytes.toLocaleString()} bytes\n`);
 process.stdout.write(`full package code and data: ${fullBytes.toLocaleString()} bytes\n`);
