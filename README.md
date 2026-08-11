@@ -21,6 +21,9 @@ npm run dev -- "I'm new to this project, what should I do?"
 ```
 
 Running `npm run dev` without a prompt opens the React/Ink terminal interface.
+If the selected provider has no key, the interface still opens; run `/key` and enter
+it in the masked prompt. Environment variables take precedence over locally saved
+keys. Saved keys live outside sessions in an owner-readable-only state file.
 When OpenRouter is selected, press `Ctrl+P` to open the model picker. It fetches
 tool-capable models on demand, supports search and arrow-key navigation, and accepts
 a complete custom `provider/model` ID. The next prompt uses the selected model.
@@ -32,12 +35,14 @@ stop the current run without adding a partial turn to the session.
 
 Interactive sessions are saved locally and can be resumed after restarting. Type
 `/help` for the command list. The main commands are `/plan`, `/start-work`, `/loop`,
-`/model`, `/history`, `/resume`, `/rewind`, `/undo`, `/redo`, `/new`, `/skills`,
+`/key`, `/model`, `/history`, `/resume`, `/rewind`, `/undo`, `/redo`, `/new`, `/skills`,
 `/tools`, `/status`, and `/activity`.
 Rewind affects conversation context only and restores the removed prompt for editing;
 it never claims to restore files.
 
 The agent can list, search, read, write, and precisely edit files inside one workspace.
+It can also read bounded git history, which lets `changelog-generator` inspect real
+commits without exposing a general shell.
 Search uses `rg` without a shell, and every path is checked against the workspace root,
 including symlink targets. The current directory is writable by default; use
 `--workspace <path>` to choose another root or `--read-only` to hide the mutating
@@ -92,9 +97,11 @@ npm run dev -- skills doctor
 npm run dev -- --debug "I'm new to this project"
 npm run dev -- --json "Write release notes: feat: add export; fix: preserve filenames"
 npm run dev -- "/welcome-me show me around"
+npm run dev -- "/changelog-generator Create notes from recent commits"
 ```
 
-The direct Anthropic default is `claude-sonnet-5`.
+The direct Anthropic default is `claude-sonnet-5`. It calls the Claude Messages API
+with Node's native `fetch`; the project has no Anthropic SDK dependency.
 
 The main model may delegate bounded, tool-free analysis tasks to isolated subagents.
 The default limit is two per run; set it with `--subagents <n>` or
@@ -141,7 +148,7 @@ CLI or Ink UI
       │     ├── activate_skill
       │     └── read_skill_resource
       ├── bounded subagent requests
-      ├── workspace tools ─── list, rg search, read, write, edit
+      ├── workspace tools ─── list, rg search, git history, read, write, edit
       └── activity events
 
   native workflow ─── plan → one step → independent verification
@@ -152,7 +159,7 @@ CLI or Ink UI
 .skills/                 bundled assessment skills
 agents/                  focused native workflow roles
 src/agent/               model and tool loop
-src/providers/           official SDK and lightweight API adapters
+src/providers/           direct Claude and compatible provider adapters
 src/session/             atomic local history and rewind state
 src/skills/              discovery, validation, activation, resources
 src/tools/               workspace boundary and file tools
@@ -178,19 +185,18 @@ npm run check
 npm run pack:release
 ```
 
-`npm run check` runs the type checker, forty-one behavior tests, both builds, and byte
+`npm run check` runs the type checker, forty-nine behavior tests, both builds, and byte
 budgets. The current arm64 macOS build measures:
 
 | Artifact | Size |
 | --- | ---: |
-| Lite, headless CLI | 320,786 bytes |
-| Full CLI, React UI, skills, roles, and notices | 1,064,236 bytes |
-| Compressed release tarball | 435,647 bytes |
+| Lite, headless CLI | 149,155 bytes |
+| Full CLI, React UI, skills, roles, and notices | 898,059 bytes |
+| Compressed release tarball | 343,040 bytes |
 
-The full build uses the official Anthropic SDK. The lite build uses Node's native
-`fetch` for every provider, which keeps it well below 1 MB. Both require an installed
-Node runtime; neither measurement hides an embedded standalone runtime. The release
-tarball contains no production dependency declarations.
+Every provider uses Node's native `fetch`, keeping both builds below 1 MB. Both require
+an installed Node runtime; neither measurement hides an embedded standalone runtime.
+The release tarball contains no production dependency declarations.
 
 The deterministic suite exercises the complete selection loop without credentials.
 A live Sonnet smoke test was not run in the build environment because provider
@@ -202,15 +208,15 @@ workspace tool creation, the native plan and verification flow, and modal cancel
 
 ## Submission notes
 
-I spent about five hours on specification review, implementation, tests, and
+I spent about six hours on specification review, implementation, tests, and
 packaging.
 
 The part I paid most attention to was proving that instructions are absent before
 activation, rather than merely claiming they are loaded lazily. Resource-backed
 skills also needed a narrow file boundary so `..`, absolute paths, and symlink escapes
 cannot read outside the active skill. Workspace file tools use the same boundary and
-do not expose an unrestricted shell. The lite and full builds use separate Claude
-adapters so the React UI and SDK do not consume the headless size budget.
+do not expose an unrestricted shell. Direct API adapters keep the provider boundary
+small enough to review while avoiding a large runtime dependency.
 
 The native workflow was interesting for a different reason: execution and
 verification must not collapse into the same self-assessment. The executor receives
