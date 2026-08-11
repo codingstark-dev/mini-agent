@@ -1,4 +1,4 @@
-import { activateSkill, type ActivatedSkill } from "../skills/activation.js";
+import { activateSkill, readSkillResource, type ActivatedSkill } from "../skills/activation.js";
 import type { SkillCatalog, SkillSummary } from "../skills/discovery.js";
 import type {
   Provider,
@@ -63,6 +63,25 @@ function activationTool(skills: readonly SkillSummary[]): ProviderTool[] {
   ];
 }
 
+function resourceTool(active: ReadonlyMap<string, ActivatedSkill>): ProviderTool[] {
+  if (active.size === 0) return [];
+  return [
+    {
+      name: "read_skill_resource",
+      description: "Read one referenced file from an active skill. Paths are relative to that skill's directory.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          skill: { type: "string", enum: [...active.keys()] },
+          path: { type: "string" },
+        },
+        required: ["skill", "path"],
+        additionalProperties: false,
+      },
+    },
+  ];
+}
+
 function activationContent(skill: ActivatedSkill): string {
   const resources = skill.resources.length > 0 ? skill.resources.map(escapeXml).join("\n") : "(none)";
   return `<activated_skill name="${escapeXml(skill.name)}">\n<directory>${escapeXml(skill.directory)}</directory>\n<instructions>\n${skill.instructions}\n</instructions>\n<available_resources>\n${resources}\n</available_resources>\n</activated_skill>`;
@@ -72,6 +91,12 @@ function requestedSkill(call: ToolUseBlock): string | undefined {
   if (!call.input || typeof call.input !== "object") return undefined;
   const name = (call.input as Record<string, unknown>).name;
   return typeof name === "string" ? name : undefined;
+}
+
+function requestedResource(call: ToolUseBlock): { skill: string; path: string } | undefined {
+  if (!call.input || typeof call.input !== "object") return undefined;
+  const { skill, path } = call.input as Record<string, unknown>;
+  return typeof skill === "string" && typeof path === "string" ? { skill, path } : undefined;
 }
 
 export async function runAgent(options: RunAgentOptions): Promise<AgentResult> {
@@ -88,7 +113,7 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentResult> {
     const response = await options.provider.complete({
       system: buildSystemPrompt(options.catalog),
       messages,
-      tools: activationTool(options.catalog.skills),
+      tools: [...activationTool(options.catalog.skills), ...resourceTool(active)],
       ...(options.signal ? { signal: options.signal } : {}),
     });
     if (response.requestId) requestIds.push(response.requestId);
@@ -105,6 +130,27 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentResult> {
 
     const results: ProviderContent[] = [];
     for (const call of calls) {
+      if (call.name === "read_skill_resource") {
+        const requested = requestedResource(call);
+        const skill = requested ? active.get(requested.skill) : undefined;
+        try {
+          if (!requested || !skill) throw new Error("Resource reads require an active skill and relative path");
+          results.push({
+            type: "tool_result",
+            toolUseId: call.id,
+            content: await readSkillResource(skill, requested.path),
+          } satisfies ToolResultBlock);
+        } catch (error) {
+          results.push({
+            type: "tool_result",
+            toolUseId: call.id,
+            content: error instanceof Error ? error.message : String(error),
+            isError: true,
+          } satisfies ToolResultBlock);
+        }
+        continue;
+      }
+
       if (call.name !== "activate_skill") {
         results.push({
           type: "tool_result",

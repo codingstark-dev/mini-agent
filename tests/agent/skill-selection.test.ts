@@ -39,6 +39,33 @@ class WeatherProvider implements Provider {
   }
 }
 
+class ResourceProvider implements Provider {
+  readonly requests: ProviderRequest[] = [];
+
+  async complete(request: ProviderRequest): Promise<ProviderResponse> {
+    this.requests.push(structuredClone(request));
+    if (this.requests.length === 1) {
+      return {
+        content: [{ type: "tool_use", id: "activate", name: "activate_skill", input: { name: "internal-comms" } }],
+        stopReason: "tool_use",
+      };
+    }
+    if (this.requests.length === 2) {
+      assert.equal(request.tools.some((tool) => tool.name === "read_skill_resource"), true);
+      return {
+        content: [{
+          type: "tool_use",
+          id: "read",
+          name: "read_skill_resource",
+          input: { skill: "internal-comms", path: "examples/status.md" },
+        }],
+        stopReason: "tool_use",
+      };
+    }
+    return { content: [{ type: "text", text: "Update ready." }], stopReason: "end_turn" };
+  }
+}
+
 test("the model can select a skill without seeing its instructions up front", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "mini-agent-loop-"));
   const skillDirectory = path.join(root, "welcome-me");
@@ -79,4 +106,23 @@ test("an unrelated prompt does not load the welcome skill", async () => {
   assert.deepEqual(result.activations, []);
   assert.equal(provider.requests.length, 1);
   assert.equal(JSON.stringify(provider.requests).includes("PRIVATE WELCOME INSTRUCTIONS"), false);
+});
+
+test("an activated skill can load one referenced resource", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "mini-agent-resource-loop-"));
+  const skillDirectory = path.join(root, "internal-comms");
+  await mkdir(path.join(skillDirectory, "examples"), { recursive: true });
+  await writeFile(
+    path.join(skillDirectory, "SKILL.md"),
+    `---\nname: internal-comms\ndescription: Write internal company updates.\n---\n\nRead examples/status.md.`,
+  );
+  await writeFile(path.join(skillDirectory, "examples", "status.md"), "RESOURCE CONTENT");
+  const catalog = await discoverSkills([{ directory: root, source: "project" }]);
+  const provider = new ResourceProvider();
+
+  const result = await runAgent({ prompt: "Write a status report", catalog, provider });
+
+  assert.equal(result.text, "Update ready.");
+  assert.equal(JSON.stringify(provider.requests[0]).includes("RESOURCE CONTENT"), false);
+  assert.equal(JSON.stringify(provider.requests[2]?.messages).includes("RESOURCE CONTENT"), true);
 });
