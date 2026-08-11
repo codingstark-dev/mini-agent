@@ -162,7 +162,9 @@ function App(properties: AppProperties): React.JSX.Element {
             {!harness.busy && <Text inverse> </Text>}
           </Box>
           <Text color={properties.theme.muted} wrap="truncate-end">
-            / commands and skills{harness.canPickModels ? " · Ctrl+P models" : ""} · Ctrl+R rewind · Ctrl+C exit
+            {harness.busy
+              ? "Esc stop current run · Ctrl+C exit"
+              : `/ commands and skills${harness.canPickModels ? " · Ctrl+P models" : ""} · Ctrl+R rewind · Ctrl+C exit`}
           </Text>
         </Box>
       )}

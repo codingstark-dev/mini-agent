@@ -1,4 +1,4 @@
-import { useReducer } from "react";
+import { useReducer, useRef } from "react";
 import { useInput } from "ink";
 
 import {
@@ -121,6 +121,7 @@ export interface HarnessController extends HarnessState {
 }
 
 export function useHarnessController(options: HarnessOptions): HarnessController {
+  const runController = useRef<AbortController | undefined>(undefined);
   const [state, dispatch] = useReducer(reduceHarness, undefined, () => ({
     input: "",
     busy: false,
@@ -348,6 +349,8 @@ export function useHarnessController(options: HarnessOptions): HarnessController
     }
 
     patch({ input: "", busy: true, panel: "", notice: "", liveActivity: [] });
+    const controller = new AbortController();
+    runController.current = controller;
     const activity: AgentEvent[] = [];
     try {
       const result = await runAgent({
@@ -356,6 +359,7 @@ export function useHarnessController(options: HarnessOptions): HarnessController
         catalog: options.catalog,
         provider: state.provider,
         maxSubagents: options.maxSubagents,
+        signal: controller.signal,
         onEvent: (event) => {
           activity.push(event);
           patch({ liveActivity: [...activity] });
@@ -379,8 +383,13 @@ export function useHarnessController(options: HarnessOptions): HarnessController
         turns: [...state.turns, turn],
       });
     } catch (error) {
-      patch({ panel: `Run failed: ${error instanceof Error ? error.message : String(error)}` });
+      patch({
+        panel: controller.signal.aborted
+          ? "Run stopped. The conversation was not changed."
+          : `Run failed: ${error instanceof Error ? error.message : String(error)}`,
+      });
     } finally {
+      if (runController.current === controller) runController.current = undefined;
       patch({ busy: false, liveActivity: [] });
     }
   }
@@ -406,7 +415,13 @@ export function useHarnessController(options: HarnessOptions): HarnessController
 
   useInput((character, key) => {
     if (key.ctrl && character === "c") {
+      runController.current?.abort();
       options.exit();
+      return;
+    }
+    if (state.busy && key.escape) {
+      runController.current?.abort();
+      patch({ notice: "Stopping current run…" });
       return;
     }
     if (state.busy || state.modelPickerOpen || state.picker) return;
