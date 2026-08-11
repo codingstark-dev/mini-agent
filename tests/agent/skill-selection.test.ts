@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { runAgent } from "../../src/agent/run-agent.js";
+import { runAgent, type AgentEvent } from "../../src/agent/run-agent.js";
 import type { Provider, ProviderRequest, ProviderResponse } from "../../src/providers/types.js";
 import { discoverSkills } from "../../src/skills/discovery.js";
 
@@ -112,11 +112,13 @@ test("the model can select a skill without seeing its instructions up front", as
   );
   const catalog = await discoverSkills([{ directory: root, source: "project" }]);
   const provider = new WelcomeProvider();
+  const events: AgentEvent[] = [];
 
   const result = await runAgent({
     prompt: "I'm new to this project. What should I do?",
     catalog,
     provider,
+    onEvent: (event) => { events.push(event); },
   });
 
   assert.equal(result.activations[0], "welcome-me");
@@ -125,6 +127,14 @@ test("the model can select a skill without seeing its instructions up front", as
   assert.equal(provider.requests[0]?.system.includes("HARD-TO-GUESS-WELCOME"), false);
   assert.equal(JSON.stringify(provider.requests[1]?.messages).includes("HARD-TO-GUESS-WELCOME"), true);
   assert.equal(JSON.stringify(provider.requests[1]).includes(root), false);
+  assert.deepEqual(events.map((event) => event.type), [
+    "model_request",
+    "model_response",
+    "skill_activated",
+    "model_request",
+    "model_response",
+    "complete",
+  ]);
 });
 
 test("an unrelated prompt does not load the welcome skill", async () => {

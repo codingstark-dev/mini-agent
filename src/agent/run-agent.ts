@@ -20,6 +20,12 @@ export interface ConversationTurn {
   answer: string;
 }
 
+export type AgentEvent =
+  | { type: "model_request"; turn: number }
+  | { type: "model_response"; turn: number; stopReason: string }
+  | { type: "skill_activated"; name: string }
+  | { type: "complete"; turns: number };
+
 export interface RunAgentOptions {
   prompt: string;
   history?: ConversationTurn[];
@@ -28,6 +34,7 @@ export interface RunAgentOptions {
   maxTurns?: number;
   signal?: AbortSignal;
   onActivation?: (name: string) => void;
+  onEvent?: (event: AgentEvent) => void;
 }
 
 function escapeXml(value: string): string {
@@ -115,6 +122,7 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentResult> {
     const activated = await activateSkill(explicitSummary);
     active.set(activated.name, activated);
     options.onActivation?.(activated.name);
+    options.onEvent?.({ type: "skill_activated", name: activated.name });
     const remainingPrompt = options.prompt.slice(explicit[0].length).trim();
     initialContent.push({ type: "text", text: remainingPrompt || "Follow the explicitly activated skill." });
     initialContent.push({ type: "text", text: activationContent(activated) });
@@ -132,12 +140,14 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentResult> {
   const maxTurns = options.maxTurns ?? 6;
 
   for (let turn = 0; turn < maxTurns; turn += 1) {
+    options.onEvent?.({ type: "model_request", turn: turn + 1 });
     const response = await options.provider.complete({
       system: buildSystemPrompt(options.catalog),
       messages,
       tools: [...activationTool(options.catalog.skills), ...resourceTool(active)],
       ...(options.signal ? { signal: options.signal } : {}),
     });
+    options.onEvent?.({ type: "model_response", turn: turn + 1, stopReason: response.stopReason });
     if (response.requestId) requestIds.push(response.requestId);
     messages.push({ role: "assistant", content: response.content });
 
@@ -154,6 +164,7 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentResult> {
       if (response.stopReason === "other" || response.stopReason === "tool_use") {
         throw new Error(`Claude stopped unexpectedly (${response.stopReason})`);
       }
+      options.onEvent?.({ type: "complete", turns: turn + 1 });
       return { text: responseText, activations: [...active.keys()], requestIds };
     }
 
@@ -206,6 +217,7 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentResult> {
       if (!active.has(name)) {
         active.set(name, activated);
         options.onActivation?.(name);
+        options.onEvent?.({ type: "skill_activated", name });
       }
       results.push({
         type: "tool_result",
