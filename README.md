@@ -31,7 +31,7 @@ Example prompts:
 
 ```text
 I'm new to this project, what should I do?
-Create customer-facing release notes from the latest commits.
+Turn these commits into release notes: feat: add export; fix: preserve filenames.
 Write a short 3P update for the team.
 ```
 
@@ -85,19 +85,23 @@ npm run check
 npm run pack:release
 ```
 
-`npm run check` runs the type checker, twelve behavior tests, both builds, and byte
+`npm run check` runs the type checker, thirteen behavior tests, both builds, and byte
 budgets. The current arm64 macOS build measures:
 
 | Artifact | Size |
 | --- | ---: |
-| Lite, headless CLI | 128,865 bytes |
-| Full CLI, React UI, skills, and notices | 1,014,214 bytes |
-| Compressed release tarball | 363,528 bytes |
+| Lite, headless CLI | 129,054 bytes |
+| Full CLI, React UI, skills, and notices | 1,014,404 bytes |
+| Compressed release tarball | 363,673 bytes |
 
 The full build uses the official Anthropic SDK. The lite build uses the same provider
 interface with Node's native `fetch`, which puts it well below 1 MB. Both require
 an installed Node runtime; neither measurement hides an embedded standalone runtime.
 The release tarball contains no production dependency declarations.
+
+The deterministic suite exercises the complete selection loop without credentials.
+A live Sonnet smoke test was not run in the build environment because no
+`ANTHROPIC_API_KEY` was available.
 
 ## Submission notes
 

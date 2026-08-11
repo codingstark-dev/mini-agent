@@ -15,7 +15,10 @@ class WelcomeProvider implements Provider {
     this.requests.push(structuredClone(request));
     if (this.requests.length === 1) {
       return {
-        content: [{ type: "tool_use", id: "tool-1", name: "activate_skill", input: { name: "welcome-me" } }],
+        content: [
+          { type: "text", text: "I'll load the welcome instructions." },
+          { type: "tool_use", id: "tool-1", name: "activate_skill", input: { name: "welcome-me" } },
+        ],
         stopReason: "tool_use",
       };
     }
@@ -66,6 +69,12 @@ class ResourceProvider implements Provider {
   }
 }
 
+class TruncatedProvider implements Provider {
+  async complete(): Promise<ProviderResponse> {
+    return { content: [{ type: "text", text: "Partial answer" }], stopReason: "max_tokens" };
+  }
+}
+
 test("the model can select a skill without seeing its instructions up front", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "mini-agent-loop-"));
   const skillDirectory = path.join(root, "welcome-me");
@@ -88,6 +97,7 @@ test("the model can select a skill without seeing its instructions up front", as
   assert.match(provider.requests[0]?.system ?? "", /Welcome users who say they are new/);
   assert.equal(provider.requests[0]?.system.includes("HARD-TO-GUESS-WELCOME"), false);
   assert.equal(JSON.stringify(provider.requests[1]?.messages).includes("HARD-TO-GUESS-WELCOME"), true);
+  assert.equal(JSON.stringify(provider.requests[1]).includes(root), false);
 });
 
 test("an unrelated prompt does not load the welcome skill", async () => {
@@ -144,4 +154,15 @@ test("a slash command activates a known skill before the first model turn", asyn
   assert.equal(JSON.stringify(provider.requests[0]?.messages).includes("EXPLICIT WELCOME INSTRUCTIONS"), true);
   const firstBlock = provider.requests[0]?.messages[0]?.content[0];
   assert.equal(firstBlock?.type === "text" ? firstBlock.text : undefined, "show me around");
+});
+
+test("a truncated model response is not reported as a completed answer", async () => {
+  await assert.rejects(
+    runAgent({
+      prompt: "Write a long answer",
+      catalog: { skills: [], diagnostics: [] },
+      provider: new TruncatedProvider(),
+    }),
+    /maximum output length/,
+  );
 });

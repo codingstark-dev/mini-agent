@@ -84,7 +84,7 @@ function resourceTool(active: ReadonlyMap<string, ActivatedSkill>): ProviderTool
 
 function activationContent(skill: ActivatedSkill): string {
   const resources = skill.resources.length > 0 ? skill.resources.map(escapeXml).join("\n") : "(none)";
-  return `<activated_skill name="${escapeXml(skill.name)}">\n<directory>${escapeXml(skill.directory)}</directory>\n<instructions>\n${skill.instructions}\n</instructions>\n<available_resources>\n${resources}\n</available_resources>\n</activated_skill>`;
+  return `<activated_skill name="${escapeXml(skill.name)}">\n<instructions>\n${skill.instructions}\n</instructions>\n<available_resources>\n${resources}\n</available_resources>\n</activated_skill>`;
 }
 
 function requestedSkill(call: ToolUseBlock): string | undefined {
@@ -118,7 +118,6 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentResult> {
   const messages: ProviderMessage[] = [
     { role: "user", content: initialContent },
   ];
-  const text: string[] = [];
   const requestIds: string[] = [];
   const maxTurns = options.maxTurns ?? 6;
 
@@ -132,13 +131,20 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentResult> {
     if (response.requestId) requestIds.push(response.requestId);
     messages.push({ role: "assistant", content: response.content });
 
-    for (const block of response.content) {
-      if (block.type === "text") text.push(block.text);
-    }
+    const responseText = response.content
+      .flatMap((block) => (block.type === "text" ? [block.text] : []))
+      .join("\n")
+      .trim();
 
     const calls = response.content.filter((block): block is ToolUseBlock => block.type === "tool_use");
     if (calls.length === 0) {
-      return { text: text.join("\n").trim(), activations: [...active.keys()], requestIds };
+      if (response.stopReason === "max_tokens") {
+        throw new Error("Claude reached its maximum output length before completing the answer");
+      }
+      if (response.stopReason === "other" || response.stopReason === "tool_use") {
+        throw new Error(`Claude stopped unexpectedly (${response.stopReason})`);
+      }
+      return { text: responseText, activations: [...active.keys()], requestIds };
     }
 
     const results: ProviderContent[] = [];
