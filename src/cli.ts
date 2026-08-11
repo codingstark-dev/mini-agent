@@ -5,6 +5,10 @@ import { DemoProvider } from "./providers/mock.js";
 import { discoverSkills } from "./skills/discovery.js";
 import { defaultSkillScopes } from "./skills/scopes.js";
 
+declare const __MINI_AGENT_LITE__: boolean;
+
+const liteBuild = typeof __MINI_AGENT_LITE__ !== "undefined" && __MINI_AGENT_LITE__;
+
 interface Options {
   prompt: string;
   debug: boolean;
@@ -71,7 +75,7 @@ async function main(): Promise<void> {
     return;
   }
   if (!options.prompt) {
-    if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    if (liteBuild || !process.stdin.isTTY || !process.stdout.isTTY) {
       printHelp();
       return;
     }
