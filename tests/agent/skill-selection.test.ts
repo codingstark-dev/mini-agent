@@ -27,6 +27,18 @@ class WelcomeProvider implements Provider {
   }
 }
 
+class WeatherProvider implements Provider {
+  readonly requests: ProviderRequest[] = [];
+
+  async complete(request: ProviderRequest): Promise<ProviderResponse> {
+    this.requests.push(structuredClone(request));
+    return {
+      content: [{ type: "text", text: "I need a location before I can discuss the weather." }],
+      stopReason: "end_turn",
+    };
+  }
+}
+
 test("the model can select a skill without seeing its instructions up front", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "mini-agent-loop-"));
   const skillDirectory = path.join(root, "welcome-me");
@@ -49,4 +61,22 @@ test("the model can select a skill without seeing its instructions up front", as
   assert.match(provider.requests[0]?.system ?? "", /Welcome users who say they are new/);
   assert.equal(provider.requests[0]?.system.includes("HARD-TO-GUESS-WELCOME"), false);
   assert.equal(JSON.stringify(provider.requests[1]?.messages).includes("HARD-TO-GUESS-WELCOME"), true);
+});
+
+test("an unrelated prompt does not load the welcome skill", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "mini-agent-negative-"));
+  const skillDirectory = path.join(root, "welcome-me");
+  await mkdir(skillDirectory);
+  await writeFile(
+    path.join(skillDirectory, "SKILL.md"),
+    `---\nname: welcome-me\ndescription: Welcome users who say they are new to a project.\n---\n\nPRIVATE WELCOME INSTRUCTIONS`,
+  );
+  const catalog = await discoverSkills([{ directory: root, source: "project" }]);
+  const provider = new WeatherProvider();
+
+  const result = await runAgent({ prompt: "What's the weather?", catalog, provider });
+
+  assert.deepEqual(result.activations, []);
+  assert.equal(provider.requests.length, 1);
+  assert.equal(JSON.stringify(provider.requests).includes("PRIVATE WELCOME INSTRUCTIONS"), false);
 });
