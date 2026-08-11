@@ -8,6 +8,7 @@ import {
   type ProviderName,
 } from "./providers/create.js";
 import { DemoProvider } from "./providers/mock.js";
+import { fetchOpenRouterModels } from "./providers/openrouter-models.js";
 import { discoverSkills } from "./skills/discovery.js";
 import { defaultSkillScopes } from "./skills/scopes.js";
 
@@ -105,13 +106,22 @@ async function main(): Promise<void> {
     const provider = options.mock
       ? new DemoProvider()
       : createProvider(options.provider, options.model);
+    const openRouterApiKey = process.env.OPENROUTER_API_KEY;
     const { startInteractive } = await import("./ui/start.js");
     await startInteractive({
       catalog,
       provider,
-      model: options.mock
-        ? "offline demo"
-        : `${providerLabel(options.provider)} · ${options.model}`,
+      model: options.mock ? "offline demo" : options.model,
+      providerLabel: options.mock ? "Demo" : providerLabel(options.provider),
+      ...(!options.mock
+        ? { createProvider: (model: string) => createProvider(options.provider, model) }
+        : {}),
+      ...(options.provider === "openrouter" && openRouterApiKey && !options.mock
+        ? {
+            loadModels: (signal: AbortSignal) =>
+              fetchOpenRouterModels(openRouterApiKey, globalThis.fetch, signal),
+          }
+        : {}),
     });
     return;
   }
