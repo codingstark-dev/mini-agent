@@ -39,7 +39,7 @@ export interface ProviderRequest {
 
 export interface ProviderResponse {
   content: Array<TextBlock | ToolUseBlock>;
-  stopReason: "end_turn" | "tool_use" | "max_tokens" | "refusal";
+  stopReason: "end_turn" | "tool_use" | "max_tokens" | "refusal" | "other";
   requestId?: string;
 }
 
