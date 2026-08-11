@@ -111,12 +111,17 @@ async function main(): Promise<void> {
     await startInteractive({
       catalog,
       provider,
+      providerName: options.provider,
       model: options.mock ? "offline demo" : options.model,
       providerLabel: options.mock ? "Demo" : providerLabel(options.provider),
+      persistSessions: !options.mock,
       ...(!options.mock
-        ? { createProvider: (model: string) => createProvider(options.provider, model) }
+        ? {
+            createProvider: (providerName: ProviderName, model: string) =>
+              createProvider(providerName, model),
+          }
         : {}),
-      ...(options.provider === "openrouter" && openRouterApiKey && !options.mock
+      ...(openRouterApiKey && !options.mock
         ? {
             loadModels: (signal: AbortSignal) =>
               fetchOpenRouterModels(openRouterApiKey, globalThis.fetch, signal),
