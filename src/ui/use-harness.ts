@@ -19,7 +19,14 @@ import {
 } from "../session/session-store.js";
 import type { SkillCatalog } from "../skills/discovery.js";
 import type { Choice } from "./choice-picker.js";
-import { parseSlashCommand, type SlashCommand } from "./commands.js";
+import {
+  isSlashCommand,
+  parseSlashCommand,
+  slashHelpText,
+  slashSuggestions,
+  type SlashCommand,
+  type SlashSuggestion,
+} from "./commands.js";
 
 export type PickerState =
   | { kind: "history"; choices: Choice[] }
@@ -40,12 +47,14 @@ interface HarnessState {
   picker: PickerState | undefined;
   panel: string;
   notice: string;
+  suggestionIndex: number;
 }
 
 type HarnessAction =
   | { type: "patch"; value: Partial<HarnessState> }
   | { type: "append_input"; value: string }
   | { type: "backspace" }
+  | { type: "move_suggestion"; value: number }
   | { type: "toggle_activity" };
 
 function reduceHarness(state: HarnessState, action: HarnessAction): HarnessState {
@@ -53,9 +62,11 @@ function reduceHarness(state: HarnessState, action: HarnessAction): HarnessState
     case "patch":
       return { ...state, ...action.value };
     case "append_input":
-      return { ...state, input: state.input + action.value };
+      return { ...state, input: state.input + action.value, suggestionIndex: 0 };
     case "backspace":
-      return { ...state, input: [...state.input].slice(0, -1).join("") };
+      return { ...state, input: [...state.input].slice(0, -1).join(""), suggestionIndex: 0 };
+    case "move_suggestion":
+      return { ...state, suggestionIndex: action.value };
     case "toggle_activity":
       return { ...state, showActivity: !state.showActivity };
   }
@@ -73,27 +84,6 @@ export interface HarnessOptions {
   sessionStore?: SessionStore;
   exit: () => void;
 }
-
-const uiCommands = new Set([
-  "activity",
-  "clear",
-  "continue",
-  "exit",
-  "help",
-  "history",
-  "model",
-  "models",
-  "new",
-  "quit",
-  "redo",
-  "resume",
-  "rewind",
-  "sessions",
-  "skills",
-  "status",
-  "thinking",
-  "undo",
-]);
 
 export function activityLabel(event: AgentEvent): string {
   switch (event.type) {
@@ -120,27 +110,12 @@ function sessionHistory(turns: SessionTurn[]): ConversationTurn[] {
   return turns.map((turn) => ({ prompt: turn.prompt, answer: turn.answer }));
 }
 
-function helpText(): string {
-  return [
-    "/model [id]  choose or set a model",
-    "/history     resume a saved session",
-    "/rewind      return to an earlier turn",
-    "/undo        remove the latest turn",
-    "/redo        restore rewound turns",
-    "/new         start a new session",
-    "/skills      list available skills",
-    "/status      show session details",
-    "/activity    show or hide activity",
-    "/clear       clear this conversation",
-    "/exit        close the agent",
-  ].join("\n");
-}
-
 export interface HarnessController extends HarnessState {
   activeSkills: string[];
   canPickModels: boolean;
   closePicker: () => void;
   latestActivity: AgentEvent | undefined;
+  suggestions: SlashSuggestion[];
   selectChoice: (id: string) => Promise<void>;
   switchModel: (model: string) => Promise<void>;
 }
@@ -161,6 +136,7 @@ export function useHarnessController(options: HarnessOptions): HarnessController
     picker: undefined,
     panel: "",
     notice: "",
+    suggestionIndex: 0,
   }));
 
   const patch = (value: Partial<HarnessState>): void => {
@@ -285,7 +261,7 @@ export function useHarnessController(options: HarnessOptions): HarnessController
   async function runCommand(command: SlashCommand): Promise<void> {
     switch (command.name) {
       case "help":
-        patch({ panel: helpText() });
+        patch({ panel: slashHelpText() });
         return;
       case "model":
       case "models":
@@ -361,7 +337,7 @@ export function useHarnessController(options: HarnessOptions): HarnessController
     const prompt = state.input.trim();
     if (!prompt || state.busy) return;
     const command = parseSlashCommand(prompt);
-    if (command && uiCommands.has(command.name)) {
+    if (command && isSlashCommand(command.name)) {
       patch({ input: "" });
       await runCommand(command);
       return;
@@ -414,6 +390,20 @@ export function useHarnessController(options: HarnessOptions): HarnessController
     if (state.picker?.kind === "rewind") await applyRewind(Number(id));
   }
 
+  const suggestions = slashSuggestions(state.input, options.catalog.skills);
+
+  function moveSuggestion(offset: number): void {
+    if (suggestions.length === 0) return;
+    const next = (state.suggestionIndex + offset + suggestions.length) % suggestions.length;
+    dispatch({ type: "move_suggestion", value: next });
+  }
+
+  function completeSuggestion(): void {
+    const suggestion = suggestions[state.suggestionIndex];
+    if (!suggestion) return;
+    patch({ input: `/${suggestion.name} `, suggestionIndex: 0 });
+  }
+
   useInput((character, key) => {
     if (key.ctrl && character === "c") {
       options.exit();
@@ -428,7 +418,28 @@ export function useHarnessController(options: HarnessOptions): HarnessController
       patch({ picker: { kind: "rewind", choices: rewindChoices() } });
       return;
     }
+    if (suggestions.length > 0 && key.upArrow) {
+      moveSuggestion(-1);
+      return;
+    }
+    if (suggestions.length > 0 && key.downArrow) {
+      moveSuggestion(1);
+      return;
+    }
+    if (suggestions.length > 0 && key.tab) {
+      completeSuggestion();
+      return;
+    }
+    if (suggestions.length > 0 && key.escape) {
+      patch({ input: "", suggestionIndex: 0 });
+      return;
+    }
     if (key.return) {
+      const selected = suggestions[state.suggestionIndex];
+      if (selected && state.input !== `/${selected.name}`) {
+        completeSuggestion();
+        return;
+      }
       void submit();
       return;
     }
@@ -447,6 +458,7 @@ export function useHarnessController(options: HarnessOptions): HarnessController
     canPickModels,
     closePicker,
     latestActivity: state.liveActivity.at(-1),
+    suggestions,
     selectChoice,
     switchModel,
   };

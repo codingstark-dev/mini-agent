@@ -8,6 +8,7 @@ import { SessionStore, type SessionTurn } from "../session/session-store.js";
 import type { SkillCatalog } from "../skills/discovery.js";
 import { ChoicePicker } from "./choice-picker.js";
 import { ModelPicker } from "./model-picker.js";
+import { SlashSuggestions } from "./slash-suggestions.js";
 import { activityLabel, useHarnessController } from "./use-harness.js";
 
 interface Theme {
@@ -119,13 +120,21 @@ function App(properties: AppProperties): React.JSX.Element {
           {harness.busy && harness.latestActivity && (
             <Text color={properties.theme.accent}>◌ {activityLabel(harness.latestActivity)}</Text>
           )}
+          {!harness.busy && harness.suggestions.length > 0 && (
+            <SlashSuggestions
+              accent={properties.theme.accent}
+              muted={properties.theme.muted}
+              selectedIndex={harness.suggestionIndex}
+              suggestions={harness.suggestions}
+            />
+          )}
           <Box>
             <Text color={properties.theme.prompt}>❯ </Text>
             <Text>{harness.busy ? "working…" : harness.input}</Text>
             {!harness.busy && <Text inverse> </Text>}
           </Box>
           <Text color={properties.theme.muted}>
-            /help commands{harness.canPickModels ? " · Ctrl+P models" : ""} · Ctrl+R rewind · Ctrl+C exit
+            / commands and skills{harness.canPickModels ? " · Ctrl+P models" : ""} · Ctrl+R rewind · Ctrl+C exit
           </Text>
         </>
       )}
