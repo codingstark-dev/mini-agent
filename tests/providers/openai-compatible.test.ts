@@ -128,3 +128,42 @@ test("sends tool results back as tool messages", async () => {
   assert.deepEqual(response.content, [{ type: "text", text: "Welcome aboard." }]);
   assert.equal(response.stopReason, "end_turn");
 });
+
+test("repairs common JSON defects in tool arguments", async () => {
+  const provider = new OpenAICompatibleProvider({
+    apiKey: "test-key",
+    endpoint: "https://gateway.example/v1/chat/completions",
+    model: "test-model",
+    name: "Test gateway",
+    fetch: async () => new Response(
+      JSON.stringify({
+        choices: [{
+          finish_reason: "tool_calls",
+          message: {
+            tool_calls: [{
+              id: "call_repaired",
+              function: {
+                name: "write_file",
+                arguments: '{"path":"index.html","content":"line one\nline two",}',
+              },
+            }],
+          },
+        }],
+      }),
+      { status: 200 },
+    ),
+  });
+
+  const response = await provider.complete({
+    system: "Use tools.",
+    messages: [{ role: "user", content: [{ type: "text", text: "Create a page" }] }],
+    tools: [],
+  });
+
+  assert.deepEqual(response.content, [{
+    type: "tool_use",
+    id: "call_repaired",
+    name: "write_file",
+    input: { path: "index.html", content: "line one\nline two" },
+  }]);
+});

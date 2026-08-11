@@ -72,6 +72,50 @@ function stopReason(reason: string | null | undefined): ProviderResponse["stopRe
   return "other";
 }
 
+function repairJsonArguments(value: string): string {
+  let repaired = "";
+  let insideString = false;
+  let escaped = false;
+
+  for (const character of value.trim()) {
+    if (!insideString) {
+      repaired += character;
+      if (character === '"') insideString = true;
+      continue;
+    }
+    if (escaped) {
+      repaired += character;
+      escaped = false;
+      continue;
+    }
+    if (character === "\\") {
+      repaired += character;
+      escaped = true;
+      continue;
+    }
+    if (character === '"') {
+      repaired += character;
+      insideString = false;
+      continue;
+    }
+    if (character === "\n") repaired += "\\n";
+    else if (character === "\r") repaired += "\\r";
+    else if (character === "\t") repaired += "\\t";
+    else repaired += character;
+  }
+
+  return repaired.replace(/,\s*([}\]])/g, "$1");
+}
+
+function parseToolArguments(value: string): unknown {
+  const source = value || "{}";
+  try {
+    return JSON.parse(source);
+  } catch {
+    return JSON.parse(repairJsonArguments(source));
+  }
+}
+
 export class OpenAICompatibleProvider implements Provider {
   private readonly options: Required<Pick<OpenAICompatibleProviderOptions, "maxTokens">> &
     Omit<OpenAICompatibleProviderOptions, "maxTokens" | "fetch">;
@@ -145,13 +189,12 @@ export class OpenAICompatibleProvider implements Provider {
     for (const call of choice.message.tool_calls ?? []) {
       const callFunction = call.function;
       if (!call.id || !callFunction?.name) continue;
-      let input: unknown = {};
       try {
-        input = JSON.parse(callFunction.arguments || "{}");
+        const input = parseToolArguments(callFunction.arguments || "{}");
+        content.push({ type: "tool_use", id: call.id, name: callFunction.name, input });
       } catch {
         throw new Error(`${this.options.name} returned invalid arguments for ${callFunction.name}`);
       }
-      content.push({ type: "tool_use", id: call.id, name: callFunction.name, input });
     }
 
     const resolvedRequestId = requestId ?? payload.id;
