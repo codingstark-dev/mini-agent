@@ -11,7 +11,8 @@ from inside the active skill directory.
 
 ## Try it
 
-Requirements: Node.js 20.11 or newer and an Anthropic API key.
+Requirements: Node.js 20.11 or newer and an API key for one of the supported
+providers.
 
 ```bash
 npm install
@@ -20,6 +21,20 @@ npm run dev -- "I'm new to this project, what should I do?"
 ```
 
 Running `npm run dev` without a prompt opens the React/Ink terminal interface.
+
+Anthropic is the default. OpenRouter and Vercel AI Gateway use the same agent and
+skill loop through their OpenAI-compatible endpoints:
+
+```bash
+export OPENROUTER_API_KEY="your-key"
+npm run dev -- --provider openrouter "I'm new to this project"
+
+export AI_GATEWAY_API_KEY="your-key"
+npm run dev -- --provider vercel "Write release notes: feat: add export"
+```
+
+The gateway default is `anthropic/claude-sonnet-4.6`. Choose another model with
+`--model`, or set `MINI_AGENT_PROVIDER` and `MINI_AGENT_MODEL` in your environment.
 
 There is also a deterministic demo that does not call an API:
 
@@ -45,15 +60,17 @@ npm run dev -- --json "Write release notes: feat: add export; fix: preserve file
 npm run dev -- "/welcome-me show me around"
 ```
 
-The default model is `claude-sonnet-5`; override it with `--model` or
-`MINI_AGENT_MODEL`.
+The direct Anthropic default is `claude-sonnet-5`.
 
 ## How it is put together
 
 ```text
 CLI or Ink UI
       │
-  agent loop ─── Anthropic provider
+  agent loop ─── provider interface
+      │              ├── Anthropic
+      │              ├── OpenRouter
+      │              └── Vercel AI Gateway
       │
   skill catalog
       ├── activate_skill
@@ -85,23 +102,23 @@ npm run check
 npm run pack:release
 ```
 
-`npm run check` runs the type checker, thirteen behavior tests, both builds, and byte
+`npm run check` runs the type checker, seventeen behavior tests, both builds, and byte
 budgets. The current arm64 macOS build measures:
 
 | Artifact | Size |
 | --- | ---: |
-| Lite, headless CLI | 129,054 bytes |
-| Full CLI, React UI, skills, and notices | 1,014,404 bytes |
-| Compressed release tarball | 364 KB |
+| Lite, headless CLI | 307,436 bytes |
+| Full CLI, React UI, skills, and notices | 1,017,438 bytes |
+| Compressed release tarball | 415,351 bytes |
 
-The full build uses the official Anthropic SDK. The lite build uses the same provider
-interface with Node's native `fetch`, which puts it well below 1 MB. Both require
-an installed Node runtime; neither measurement hides an embedded standalone runtime.
-The release tarball contains no production dependency declarations.
+The full build uses the official Anthropic SDK. The lite build uses Node's native
+`fetch` for every provider, which keeps it well below 1 MB. Both require an installed
+Node runtime; neither measurement hides an embedded standalone runtime. The release
+tarball contains no production dependency declarations.
 
 The deterministic suite exercises the complete selection loop without credentials.
-A live Sonnet smoke test was not run in the build environment because no
-`ANTHROPIC_API_KEY` was available.
+A live Sonnet smoke test was not run in the build environment because provider
+credentials were unavailable.
 
 ## Submission notes
 
@@ -115,9 +132,9 @@ cannot read outside the active skill. The lite and full builds use separate Clau
 adapters so the React UI and SDK do not consume the headless size budget.
 
 I kept the submission focused on the requested Node CLI, Sonnet, and Agent Skills
-behavior. The provider boundary can accept another implementation later. I left out
-the marketplace, arbitrary plugin execution, and a partial MCP client because they
-would distract from the code being assessed.
+behavior. OpenRouter and Vercel AI Gateway are small provider adapters rather than a
+plugin framework. I left out the marketplace, arbitrary plugin execution, and a
+partial MCP client because they would distract from the code being assessed.
 
 The bundled skills are pinned to their source commit; see
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
