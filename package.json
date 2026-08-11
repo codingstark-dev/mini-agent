@@ -14,9 +14,12 @@
   ],
   "scripts": {
     "build": "node scripts/build.mjs",
+    "dev": "node --import tsx src/cli.ts",
+    "start": "node dist/cli.mjs",
     "test": "node --import tsx --test 'tests/**/*.test.ts'",
     "typecheck": "tsc --noEmit",
     "check": "npm run typecheck && npm test && npm run build && node scripts/check-size.mjs",
+    "pack:release": "npm run check && node scripts/pack-release.mjs",
     "demo:mock": "node --import tsx src/cli.ts --mock \"I'm new to this project, what should I do?\""
   },
   "engines": {
