@@ -21,6 +21,9 @@ npm run dev -- "I'm new to this project, what should I do?"
 ```
 
 Running `npm run dev` without a prompt opens the React/Ink terminal interface.
+When OpenRouter is selected, press `Ctrl+P` to open the model picker. It fetches
+tool-capable models on demand, supports search and arrow-key navigation, and accepts
+a complete custom `provider/model` ID. The next prompt uses the selected model.
 
 Anthropic is the default. OpenRouter and Vercel AI Gateway use the same agent and
 skill loop through their OpenAI-compatible endpoints:
@@ -106,14 +109,14 @@ npm run check
 npm run pack:release
 ```
 
-`npm run check` runs the type checker, eighteen behavior tests, both builds, and byte
+`npm run check` runs the type checker, nineteen behavior tests, both builds, and byte
 budgets. The current arm64 macOS build measures:
 
 | Artifact | Size |
 | --- | ---: |
-| Lite, headless CLI | 307,453 bytes |
-| Full CLI, React UI, skills, and notices | 1,017,407 bytes |
-| Compressed release tarball | about 416 KB |
+| Lite, headless CLI | 308,378 bytes |
+| Full CLI, React UI, skills, and notices | 1,021,289 bytes |
+| Compressed release tarball | about 420 KB |
 
 The full build uses the official Anthropic SDK. The lite build uses Node's native
 `fetch` for every provider, which keeps it well below 1 MB. Both require an installed
