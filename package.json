@@ -1,0 +1,38 @@
+{
+  "name": "mini-agent",
+  "version": "0.1.0",
+  "description": "A small Claude-powered CLI with progressive Agent Skills support.",
+  "type": "module",
+  "bin": {
+    "mini-agent": "./dist/cli.mjs"
+  },
+  "files": [
+    "dist",
+    ".skills",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node --import tsx --test 'tests/**/*.test.ts'",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm test && npm run build && node scripts/check-size.mjs",
+    "demo:mock": "node --import tsx src/cli.ts --mock \"I'm new to this project, what should I do?\""
+  },
+  "engines": {
+    "node": ">=20.11"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "0.116.0",
+    "ink": "7.1.1",
+    "react": "19.2.8",
+    "yaml": "2.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "26.2.0",
+    "@types/react": "19.2.18",
+    "esbuild": "0.28.2",
+    "tsx": "4.23.12",
+    "typescript": "7.0.2"
+  }
+}
