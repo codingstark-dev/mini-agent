@@ -11,6 +11,7 @@ import type { OpenRouterModel } from "../providers/openrouter-models.js";
 import type { Provider } from "../providers/types.js";
 import {
   createSession,
+  redoSession,
   rewindSession,
   SessionStore,
   type AgentSession,
@@ -61,6 +62,7 @@ const uiCommands = new Set([
   "models",
   "new",
   "quit",
+  "redo",
   "resume",
   "rewind",
   "sessions",
@@ -101,6 +103,7 @@ function helpText(): string {
     "/history     resume a saved session",
     "/rewind      return to an earlier turn",
     "/undo        remove the latest turn",
+    "/redo        restore rewound turns",
     "/new         start a new session",
     "/skills      list available skills",
     "/status      show session details",
@@ -276,6 +279,17 @@ function App({
         if (turns.length === 0) setPanel("There is no turn to undo.");
         else await applyRewind(turns.length - 1);
         return;
+      case "redo":
+        try {
+          const next = redoSession(session);
+          await saveSession(next);
+          setInput("");
+          setNotice(`Restored ${next.turns.length - turns.length} conversation turn${next.turns.length - turns.length === 1 ? "" : "s"}`);
+          setPanel("");
+        } catch (error) {
+          setPanel(error instanceof Error ? error.message : String(error));
+        }
+        return;
       case "clear":
         await applyRewind(0);
         setInput("");
@@ -343,8 +357,9 @@ function App({
         activity,
         createdAt: timestamp,
       };
+      const { redoTurns: _discardedRedo, ...committedSession } = session;
       await saveSession({
-        ...session,
+        ...committedSession,
         provider: providerName,
         model,
         updatedAt: timestamp,

@@ -23,6 +23,7 @@ export interface AgentSession {
   provider: ProviderName;
   model: string;
   turns: SessionTurn[];
+  redoTurns?: SessionTurn[];
 }
 
 export interface SessionSummary {
@@ -86,6 +87,17 @@ export function rewindSession(
   return {
     ...session,
     turns: session.turns.slice(0, keepTurns),
+    redoTurns: [...session.turns.slice(keepTurns), ...(session.redoTurns ?? [])],
+    updatedAt: now.toISOString(),
+  };
+}
+
+export function redoSession(session: AgentSession, now = new Date()): AgentSession {
+  if (!session.redoTurns?.length) throw new Error("There are no rewound turns to restore");
+  const { redoTurns, ...current } = session;
+  return {
+    ...current,
+    turns: [...session.turns, ...redoTurns],
     updatedAt: now.toISOString(),
   };
 }

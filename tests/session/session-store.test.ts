@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 
 import {
+  redoSession,
   rewindSession,
   SessionStore,
   type AgentSession,
@@ -78,6 +79,11 @@ test("rewind returns the chosen conversation point without mutating history", ()
   const rewound = rewindSession(session, 1, new Date("2026-08-11T10:03:00.000Z"));
 
   assert.deepEqual(rewound.turns.map((turn) => turn.id), ["turn-one"]);
+  assert.deepEqual(rewound.redoTurns?.map((turn) => turn.id), ["turn-two"]);
   assert.equal(rewound.updatedAt, "2026-08-11T10:03:00.000Z");
   assert.equal(session.turns.length, 2);
+
+  const restored = redoSession(rewound, new Date("2026-08-11T10:04:00.000Z"));
+  assert.deepEqual(restored.turns.map((turn) => turn.id), ["turn-one", "turn-two"]);
+  assert.equal(restored.redoTurns, undefined);
 });
