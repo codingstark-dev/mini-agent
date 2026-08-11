@@ -66,6 +66,26 @@ test("a saved session can be listed and resumed", async () => {
   ]);
 });
 
+test("a selected model is restored with its session", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "mini-agent-model-session-"));
+  const store = new SessionStore(directory);
+  const session: AgentSession = {
+    version: 1,
+    id: "model-session",
+    createdAt: "2026-08-12T00:00:00.000Z",
+    updatedAt: "2026-08-12T00:01:00.000Z",
+    provider: "openrouter",
+    model: "deepseek/deepseek-v4-flash",
+    turns: [],
+  };
+
+  await store.save(session);
+
+  const resumed = await store.load("model-session");
+  assert.equal(resumed.provider, "openrouter");
+  assert.equal(resumed.model, "deepseek/deepseek-v4-flash");
+});
+
 test("rewind returns the chosen conversation point without mutating history", () => {
   const session: AgentSession = {
     version: 1,
