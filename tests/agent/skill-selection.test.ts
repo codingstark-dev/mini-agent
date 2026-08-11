@@ -162,6 +162,35 @@ class RepeatingBrokenToolProvider implements Provider {
   }
 }
 
+class ChangelogProvider implements Provider {
+  calls = 0;
+
+  async complete(request: ProviderRequest): Promise<ProviderResponse> {
+    this.calls += 1;
+    if (this.calls === 1) {
+      assert.equal(request.tools.some((tool) => tool.name === "git_history"), true);
+      return {
+        content: [{
+          type: "tool_use",
+          id: "recent-commits",
+          name: "git_history",
+          input: { max_count: 5 },
+        }],
+        stopReason: "tool_use",
+      };
+    }
+    const toolResult = request.messages
+      .flatMap((message) => message.content)
+      .find((block) => block.type === "tool_result");
+    assert.ok(toolResult && toolResult.type === "tool_result");
+    assert.match(toolResult.content, /^[0-9a-f]+\t\d{4}-\d{2}-\d{2}\t/m);
+    return {
+      content: [{ type: "text", text: "# Changes\n\n- Improved the agent experience." }],
+      stopReason: "end_turn",
+    };
+  }
+}
+
 test("the main agent can delegate an isolated task to a bounded subagent", async () => {
   const catalog = await discoverSkills([]);
   const provider = new DelegatingProvider();
@@ -211,6 +240,23 @@ test("a repeated invalid tool call is disabled instead of exhausting the run", a
 
   assert.equal(result.text, "I could not read a file without a path.");
   assert.equal(provider.calls, 3);
+});
+
+test("changelog-generator can read commits and finish without exhausting the run", async () => {
+  const catalog = await discoverSkills([{ directory: path.resolve(".skills"), source: "bundled" }]);
+  const provider = new ChangelogProvider();
+
+  const result = await runAgent({
+    prompt: "/changelog-generator Create notes from recent commits",
+    catalog,
+    provider,
+    maxSubagents: 0,
+    workspaceTools: await createWorkspaceTools(process.cwd(), "read-only"),
+  });
+
+  assert.equal(result.activations[0], "changelog-generator");
+  assert.match(result.text, /^# Changes/);
+  assert.equal(provider.calls, 2);
 });
 
 test("previous session turns are included in the next model request", async () => {

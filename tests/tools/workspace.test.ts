@@ -1,10 +1,14 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import { mkdtemp, mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { promisify } from "node:util";
 
 import { createWorkspaceTools } from "../../src/tools/workspace.js";
+
+const execFileAsync = promisify(execFile);
 
 test("workspace tools create, edit, read, and search project files", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "mini-agent-tools-"));
@@ -49,4 +53,22 @@ test("read-only mode exposes no mutating tools", async () => {
     tools.execute("write_file", { path: "src/new.ts", content: "export {};" }),
     /not available/,
   );
+});
+
+test("git history is available to read-only skills such as changelog-generator", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "mini-agent-git-history-"));
+  await execFileAsync("git", ["init", "--quiet"], { cwd: root });
+  await writeFile(path.join(root, "README.md"), "# Demo\n");
+  await execFileAsync("git", ["add", "README.md"], { cwd: root });
+  await execFileAsync("git", [
+    "-c", "user.name=Test User",
+    "-c", "user.email=test@example.com",
+    "commit", "--quiet", "-m", "feat: add welcome page",
+  ], { cwd: root });
+  const tools = await createWorkspaceTools(root, "read-only");
+
+  const history = await tools.execute("git_history", { max_count: 5 });
+
+  assert.equal(tools.tools.some((tool) => tool.name === "git_history"), true);
+  assert.match(history.content, /feat: add welcome page/);
 });

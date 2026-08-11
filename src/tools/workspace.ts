@@ -56,6 +56,19 @@ const readTools: readonly ProviderTool[] = [
       additionalProperties: false,
     },
   },
+  {
+    name: "git_history",
+    description: "Read recent git commits for release notes or repository context. This tool never changes the repository.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        since: { type: "string", description: "Optional git date expression, such as 7 days ago or 2026-08-01." },
+        until: { type: "string", description: "Optional end date expression." },
+        max_count: { type: "integer", minimum: 1, maximum: 200 },
+      },
+      additionalProperties: false,
+    },
+  },
 ] as const;
 
 const writeTools: readonly ProviderTool[] = [
@@ -150,9 +163,16 @@ async function checkedPath(root: string, requested: string, mayCreate = false): 
   return candidate;
 }
 
-function runRipgrep(arguments_: string[], cwd: string, signal?: AbortSignal): Promise<string> {
+function runProcess(
+  command: string,
+  arguments_: string[],
+  cwd: string,
+  successCodes: readonly number[],
+  missingMessage: string,
+  signal?: AbortSignal,
+): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn("rg", arguments_, {
+    const child = spawn(command, arguments_, {
       cwd,
       stdio: ["ignore", "pipe", "pipe"],
       ...(signal ? { signal } : {}),
@@ -181,15 +201,34 @@ function runRipgrep(arguments_: string[], cwd: string, signal?: AbortSignal): Pr
     child.stderr.on("data", (chunk: Buffer) => { errors.push(chunk); });
     child.on("error", (error) => {
       finish(error.message.includes("ENOENT")
-        ? new Error("ripgrep (rg) is required for file search but was not found on PATH")
+        ? new Error(missingMessage)
         : error);
     });
     child.on("close", (code) => {
       const stdout = Buffer.concat(output).toString("utf8").trimEnd();
-      if (code === 0 || code === 1) finish(undefined, stdout);
-      else finish(new Error(Buffer.concat(errors).toString("utf8").trim() || `ripgrep exited with code ${code}`));
+      if (code !== null && successCodes.includes(code)) finish(undefined, stdout);
+      else finish(new Error(Buffer.concat(errors).toString("utf8").trim() || `${command} exited with code ${code}`));
     });
   });
+}
+
+function runRipgrep(arguments_: string[], cwd: string, signal?: AbortSignal): Promise<string> {
+  return runProcess(
+    "rg",
+    arguments_,
+    cwd,
+    [0, 1],
+    "ripgrep (rg) is required for file search but was not found on PATH",
+    signal,
+  );
+}
+
+function gitDate(input: Record<string, unknown>, name: string): string | undefined {
+  const value = optionalString(input, name);
+  if (value && (value.length > 100 || /[\0\r\n]/.test(value))) {
+    throw new Error(`${name} is not a valid git date expression`);
+  }
+  return value;
 }
 
 export class WorkspaceTools {
@@ -248,6 +287,31 @@ export class WorkspaceTools {
         content: lines.slice(start - 1, end).map((line, index) => `${start + index}| ${line}`).join("\n"),
         summary: `read ${relativePath}:${start}-${end}`,
       };
+    }
+
+    if (name === "git_history") {
+      const maximum = optionalInteger(input, "max_count", 1, 200) ?? 50;
+      const since = gitDate(input, "since");
+      const until = gitDate(input, "until");
+      const arguments_ = [
+        "log",
+        "--no-decorate",
+        "--date=short",
+        "--pretty=format:%h%x09%ad%x09%s",
+        `--max-count=${maximum}`,
+      ];
+      if (since) arguments_.push(`--since=${since}`);
+      if (until) arguments_.push(`--until=${until}`);
+      arguments_.push("--");
+      const content = await runProcess(
+        "git",
+        arguments_,
+        this.root,
+        [0],
+        "git is required for commit history but was not found on PATH",
+        signal,
+      );
+      return { content: content || "(no commits)", summary: `read ${maximum} recent commits` };
     }
 
     if (name === "write_file") {
