@@ -54,6 +54,9 @@ interface HarnessState {
   picker: PickerState | undefined;
   panel: string;
   notice: string;
+  keyEntryOpen: boolean;
+  keyValue: string;
+  needsApiKey: boolean;
   suggestionIndex: number;
 }
 
@@ -62,6 +65,8 @@ type HarnessAction =
   | { type: "append_input"; value: string }
   | { type: "backspace" }
   | { type: "move_suggestion"; value: number }
+  | { type: "append_secret"; value: string }
+  | { type: "backspace_secret" }
   | { type: "toggle_activity" };
 
 function reduceHarness(state: HarnessState, action: HarnessAction): HarnessState {
@@ -74,6 +79,10 @@ function reduceHarness(state: HarnessState, action: HarnessAction): HarnessState
       return { ...state, input: [...state.input].slice(0, -1).join(""), suggestionIndex: 0 };
     case "move_suggestion":
       return { ...state, suggestionIndex: action.value };
+    case "append_secret":
+      return { ...state, keyValue: state.keyValue + action.value };
+    case "backspace_secret":
+      return { ...state, keyValue: [...state.keyValue].slice(0, -1).join("") };
     case "toggle_activity":
       return { ...state, showActivity: !state.showActivity };
   }
@@ -87,6 +96,8 @@ export interface HarnessOptions {
   model: string;
   createProvider?: (provider: ProviderName, model: string) => Provider;
   loadModels?: (signal: AbortSignal) => Promise<OpenRouterModel[]>;
+  configureApiKey?: (provider: ProviderName, model: string, apiKey: string) => Promise<Provider>;
+  needsApiKey?: boolean;
   maxSubagents: number;
   workspaceTools: WorkspaceTools;
   sessionStore?: SessionStore;
@@ -132,6 +143,9 @@ export function useHarnessController(options: HarnessOptions): HarnessController
     picker: undefined,
     panel: "",
     notice: "",
+    keyEntryOpen: false,
+    keyValue: "",
+    needsApiKey: options.needsApiKey ?? false,
     suggestionIndex: 0,
   }));
 
@@ -254,6 +268,31 @@ export function useHarnessController(options: HarnessOptions): HarnessController
     });
   }
 
+  async function saveApiKey(): Promise<void> {
+    const apiKey = state.keyValue.trim();
+    if (!apiKey) {
+      patch({ panel: "API key cannot be empty." });
+      return;
+    }
+    if (!options.configureApiKey) {
+      patch({ panel: "API key setup is unavailable in this build." });
+      return;
+    }
+    try {
+      const provider = await options.configureApiKey(state.providerName, state.model, apiKey);
+      patch({
+        provider,
+        keyEntryOpen: false,
+        keyValue: "",
+        needsApiKey: false,
+        panel: "",
+        notice: `${state.providerLabel} API key saved`,
+      });
+    } catch (error) {
+      patch({ panel: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
   async function runNativeWorkflow(
     command: "plan" | "start-work" | "loop",
     argument: string,
@@ -351,6 +390,13 @@ export function useHarnessController(options: HarnessOptions): HarnessController
 
   async function runCommand(command: SlashCommand): Promise<void> {
     switch (command.name) {
+      case "key":
+        if (command.argument) {
+          patch({ panel: "Type /key without the key. The next input is masked." });
+        } else {
+          patch({ keyEntryOpen: true, keyValue: "", panel: "", notice: "" });
+        }
+        return;
       case "plan":
         await runNativeWorkflow("plan", command.argument);
         return;
@@ -533,6 +579,24 @@ export function useHarnessController(options: HarnessOptions): HarnessController
     if (key.ctrl && character === "c") {
       runController.current?.abort();
       options.exit();
+      return;
+    }
+    if (state.keyEntryOpen) {
+      if (key.escape) {
+        patch({ keyEntryOpen: false, keyValue: "", panel: "", notice: "API key setup cancelled" });
+        return;
+      }
+      if (key.return) {
+        void saveApiKey();
+        return;
+      }
+      if (key.backspace || key.delete) {
+        dispatch({ type: "backspace_secret" });
+        return;
+      }
+      if (!key.ctrl && !key.meta && character) {
+        dispatch({ type: "append_secret", value: character });
+      }
       return;
     }
     if (state.busy && key.escape) {

@@ -41,6 +41,18 @@ export function providerLabel(provider: ProviderName): string {
   return settings[provider].label;
 }
 
+export function providerEnvironmentKey(provider: ProviderName): ProviderSettings["key"] {
+  return settings[provider].key;
+}
+
+export function createSetupRequiredProvider(provider: ProviderName): Provider {
+  return {
+    async complete() {
+      throw new Error(`${settings[provider].label} needs an API key. Type /key to configure it.`);
+    },
+  };
+}
+
 export function createProvider(
   provider: ProviderName,
   model: string,

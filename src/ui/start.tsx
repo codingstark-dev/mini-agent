@@ -40,6 +40,8 @@ interface AppProperties {
   model: string;
   createProvider?: (provider: ProviderName, model: string) => Provider;
   loadModels?: (signal: AbortSignal) => Promise<OpenRouterModel[]>;
+  configureApiKey?: (provider: ProviderName, model: string, apiKey: string) => Promise<Provider>;
+  needsApiKey?: boolean;
   maxSubagents: number;
   workspaceTools: WorkspaceTools;
   sessionStore?: SessionStore;
@@ -76,6 +78,8 @@ function App(properties: AppProperties): React.JSX.Element {
     exit,
     ...(properties.createProvider ? { createProvider: properties.createProvider } : {}),
     ...(properties.loadModels ? { loadModels: properties.loadModels } : {}),
+    ...(properties.configureApiKey ? { configureApiKey: properties.configureApiKey } : {}),
+    ...(properties.needsApiKey !== undefined ? { needsApiKey: properties.needsApiKey } : {}),
     ...(properties.sessionStore ? { sessionStore: properties.sessionStore } : {}),
   });
   const rows = Math.max(12, stdout.rows ?? 24);
@@ -101,6 +105,7 @@ function App(properties: AppProperties): React.JSX.Element {
         <Box flexGrow={1} overflow="hidden">
           <Text color={properties.theme.muted} wrap="truncate-end">
             {harness.providerLabel} · {harness.model} · session {harness.session.id}
+            {harness.needsApiKey ? " · key needed" : ""}
             {harness.session.workflow
               ? ` · plan ${harness.session.workflow.steps.filter((step) => step.status === "passed").length}/${harness.session.workflow.steps.length}`
               : ""}
@@ -181,11 +186,19 @@ function App(properties: AppProperties): React.JSX.Element {
         <Box flexDirection="column" flexShrink={0}>
           <Box>
             <Text color={properties.theme.prompt}>❯ </Text>
-            <Text>{harness.busy ? "working…" : harness.input}</Text>
+            <Text>
+              {harness.keyEntryOpen
+                ? `API key: ${"•".repeat(Math.min(harness.keyValue.length, 48))}`
+                : harness.busy
+                  ? "working…"
+                  : harness.input}
+            </Text>
             {!harness.busy && <Text inverse> </Text>}
           </Box>
           <Text color={properties.theme.muted} wrap="truncate-end">
-            {harness.busy
+            {harness.keyEntryOpen
+              ? "Enter save · Esc cancel · stored with owner-only permissions"
+              : harness.busy
               ? "Esc stop current run · Ctrl+C exit"
               : `/ commands and skills${harness.canPickModels ? " · Ctrl+P models" : ""} · Ctrl+R rewind · Ctrl+C exit`}
           </Text>
@@ -203,6 +216,8 @@ export interface InteractiveOptions {
   model: string;
   createProvider?: (provider: ProviderName, model: string) => Provider;
   loadModels?: (signal: AbortSignal) => Promise<OpenRouterModel[]>;
+  configureApiKey?: (provider: ProviderName, model: string, apiKey: string) => Promise<Provider>;
+  needsApiKey?: boolean;
   maxSubagents: number;
   workspaceTools: WorkspaceTools;
   persistSessions?: boolean;

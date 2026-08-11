@@ -2,11 +2,14 @@
 import { runAgent } from "./agent/run-agent.js";
 import {
   createProvider,
+  createSetupRequiredProvider,
   defaultModelFor,
   parseProviderName,
+  providerEnvironmentKey,
   providerLabel,
   type ProviderName,
 } from "./providers/create.js";
+import { CredentialStore } from "./providers/credentials.js";
 import { DemoProvider } from "./providers/mock.js";
 import { fetchOpenRouterModels } from "./providers/openrouter-models.js";
 import { discoverSkills } from "./skills/discovery.js";
@@ -124,16 +127,27 @@ async function main(): Promise<void> {
     return;
   }
   const workspaceTools = await createWorkspaceTools(options.workspace, options.workspaceMode);
+  const credentialStore = new CredentialStore();
+  for (const providerName of ["anthropic", "openrouter", "vercel"] as const) {
+    const environmentKey = providerEnvironmentKey(providerName);
+    if (!process.env[environmentKey]) {
+      const stored = await credentialStore.get(providerName);
+      if (stored) process.env[environmentKey] = stored;
+    }
+  }
   if (!options.prompt) {
     if (liteBuild || !process.stdin.isTTY || !process.stdout.isTTY) {
       printHelp();
       return;
     }
 
+    const environmentKey = providerEnvironmentKey(options.provider);
+    const needsApiKey = !options.mock && !process.env[environmentKey];
     const provider = options.mock
       ? new DemoProvider()
-      : createProvider(options.provider, options.model);
-    const openRouterApiKey = process.env.OPENROUTER_API_KEY;
+      : needsApiKey
+        ? createSetupRequiredProvider(options.provider)
+        : createProvider(options.provider, options.model);
     const { startInteractive } = await import("./ui/start.js");
     await startInteractive({
       catalog,
@@ -144,16 +158,21 @@ async function main(): Promise<void> {
       maxSubagents: options.maxSubagents,
       workspaceTools,
       persistSessions: !options.mock,
+      needsApiKey,
       ...(!options.mock
         ? {
             createProvider: (providerName: ProviderName, model: string) =>
               createProvider(providerName, model),
-          }
-        : {}),
-      ...(openRouterApiKey && !options.mock
-        ? {
-            loadModels: (signal: AbortSignal) =>
-              fetchOpenRouterModels(openRouterApiKey, globalThis.fetch, signal),
+            configureApiKey: async (providerName: ProviderName, model: string, apiKey: string) => {
+              await credentialStore.set(providerName, apiKey);
+              process.env[providerEnvironmentKey(providerName)] = apiKey;
+              return createProvider(providerName, model);
+            },
+            loadModels: (signal: AbortSignal) => {
+              const apiKey = process.env.OPENROUTER_API_KEY;
+              if (!apiKey) throw new Error("OpenRouter needs an API key. Type /key to configure it.");
+              return fetchOpenRouterModels(apiKey, globalThis.fetch, signal);
+            },
           }
         : {}),
     });
