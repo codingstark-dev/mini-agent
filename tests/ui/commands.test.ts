@@ -29,5 +29,8 @@ test("slash suggestions combine executable commands and installed skills", () =>
   assert.deepEqual(slashSuggestions("/to", skills), [
     { name: "tools", description: "List workspace tools and permissions", kind: "command" },
   ]);
+  assert.deepEqual(slashSuggestions("/pl", skills), [
+    { name: "plan", description: "Create and store an implementation plan", kind: "command" },
+  ]);
   assert.deepEqual(slashSuggestions("hello", skills), []);
 });

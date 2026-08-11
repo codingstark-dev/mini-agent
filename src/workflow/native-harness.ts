@@ -118,6 +118,10 @@ export async function planWorkflow(
   if (!task) throw new Error("/plan requires a task");
   const activity: AgentEvent[] = [];
   const readOnlyTools = new WorkspaceTools(options.workspaceTools.root, "read-only");
+  const roleId = `plan:${Date.now()}`;
+  const started: AgentEvent = { type: "workflow_role_started", id: roleId, role: "super-planner" };
+  activity.push(started);
+  options.onEvent?.(started);
   const result = await runAgent({
     prompt: `Create an implementation plan for this task:\n\n${task}`,
     catalog: options.catalog,
@@ -131,6 +135,9 @@ export async function planWorkflow(
       options.onEvent?.(event);
     },
   });
+  const completed: AgentEvent = { type: "workflow_role_completed", id: roleId, role: "super-planner" };
+  activity.push(completed);
+  options.onEvent?.(completed);
   const plan = parseWorkflowPlan(result.text);
   const timestamp = (options.now ?? new Date()).toISOString();
   const state: NativeWorkflowState = {
@@ -196,6 +203,9 @@ export async function runNextWorkflowStep(
     options.onEvent?.(event);
   };
   const context = `Task: ${options.state.task}\nPlan: ${options.state.summary}\n\nAssigned step: ${step.title}\n${step.instructions}\n\nVerification target: ${step.verification}`;
+  const attempt = step.attempts + 1;
+  const executorId = `${step.id}:executor:${attempt}`;
+  forwardEvent({ type: "workflow_role_started", id: executorId, role: "super-executor" });
   const executed = await runAgent({
     prompt: context,
     catalog: options.catalog,
@@ -206,6 +216,7 @@ export async function runNextWorkflowStep(
     ...(options.signal ? { signal: options.signal } : {}),
     onEvent: forwardEvent,
   });
+  forwardEvent({ type: "workflow_role_completed", id: executorId, role: "super-executor" });
 
   const commandEvidence = options.verifyCommand?.trim()
     ? await runVerifyCommand(options.verifyCommand, options.workspaceTools.root, options.signal)
@@ -213,6 +224,8 @@ export async function runNextWorkflowStep(
   const evidence = commandEvidence
     ? `Configured verification command ${commandEvidence.passed ? "passed" : "failed"}:\n${commandEvidence.output}`
     : "No verification command is configured. Inspect the workspace directly and use the available read-only tools.";
+  const verifierId = `${step.id}:verifier:${attempt}`;
+  forwardEvent({ type: "workflow_role_started", id: verifierId, role: "super-verifier" });
   const verified = await runAgent({
     prompt: `${context}\n\nExecutor report:\n${executed.text}\n\nExternal evidence:\n${evidence}`,
     catalog: options.catalog,
@@ -225,6 +238,12 @@ export async function runNextWorkflowStep(
   });
   const modelPassed = /^PASS(?:\r?\n|$)/.test(verified.text.trim());
   const passed = modelPassed && commandEvidence?.passed !== false;
+  forwardEvent({
+    type: "workflow_verification",
+    id: verifierId,
+    passed,
+    detail: `${step.title} ${passed ? "passed" : "failed"}`,
+  });
   const nextSteps = options.state.steps.map((current, index) => index === pendingIndex
     ? { ...current, status: passed ? "passed" as const : "pending" as const, attempts: current.attempts + 1 }
     : current);

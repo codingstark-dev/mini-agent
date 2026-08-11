@@ -19,6 +19,12 @@ import {
 } from "../session/session-store.js";
 import type { SkillCatalog } from "../skills/discovery.js";
 import type { WorkspaceTools } from "../tools/workspace.js";
+import {
+  planWorkflow,
+  runNextWorkflowStep,
+  runWorkflowLoop,
+  type WorkflowResult,
+} from "../workflow/native-harness.js";
 import type { Choice } from "./choice-picker.js";
 import {
   isSlashCommand,
@@ -103,6 +109,12 @@ export function activityLabel(event: AgentEvent): string {
       return `${event.role} subagent complete`;
     case "subagent_failed":
       return `${event.role} subagent failed`;
+    case "workflow_role_started":
+      return `${event.role} started`;
+    case "workflow_role_completed":
+      return `${event.role} complete`;
+    case "workflow_verification":
+      return `verification ${event.passed ? "passed" : "failed"}: ${event.detail}`;
     case "workspace_tool_started":
       return `running ${event.detail}`;
     case "workspace_tool_completed":
@@ -275,8 +287,112 @@ export function useHarnessController(options: HarnessOptions): HarnessController
     });
   }
 
+  async function runNativeWorkflow(
+    command: "plan" | "start-work" | "loop",
+    argument: string,
+  ): Promise<void> {
+    if (command === "plan" && !argument) {
+      patch({ panel: "Usage: /plan <task>" });
+      return;
+    }
+    if (command !== "plan" && !state.session.workflow) {
+      patch({ panel: "Create a plan first with /plan <task>." });
+      return;
+    }
+    const loopLimit = command === "loop" && argument ? Number(argument) : 6;
+    if (command === "loop" && (!Number.isInteger(loopLimit) || loopLimit < 1 || loopLimit > 20)) {
+      patch({ panel: "Loop limit must be an integer from 1 to 20." });
+      return;
+    }
+
+    patch({ busy: true, panel: "", notice: "", liveActivity: [] });
+    const controller = new AbortController();
+    runController.current = controller;
+    const activity: AgentEvent[] = [];
+    const onEvent = (event: AgentEvent): void => {
+      activity.push(event);
+      patch({ liveActivity: [...activity] });
+    };
+    try {
+      const common = {
+        catalog: options.catalog,
+        provider: state.provider,
+        workspaceTools: options.workspaceTools,
+        signal: controller.signal,
+        onEvent,
+      };
+      let result: WorkflowResult;
+      if (command === "plan") {
+        result = await planWorkflow({ ...common, task: argument });
+      } else if (command === "start-work") {
+        result = await runNextWorkflowStep({
+          ...common,
+          state: state.session.workflow!,
+          ...(process.env.VERIFY_CMD ? { verifyCommand: process.env.VERIFY_CMD } : {}),
+        });
+      } else {
+        result = await runWorkflowLoop({
+          ...common,
+          state: state.session.workflow!,
+          maxIterations: loopLimit,
+          ...(process.env.VERIFY_CMD ? { verifyCommand: process.env.VERIFY_CMD } : {}),
+        });
+      }
+
+      const timestamp = new Date().toISOString();
+      const prompt = command === "plan"
+        ? `/plan ${argument}`
+        : command === "loop" && argument
+          ? `/loop ${argument}`
+          : `/${command}`;
+      const turn: SessionTurn = {
+        id: `${state.session.id}-${state.turns.length + 1}`,
+        prompt,
+        answer: result.text,
+        activations: [],
+        activity,
+        createdAt: timestamp,
+        usage: result.usage,
+        workflow: result.state,
+      };
+      const { redoTurns: _discardedRedo, ...committedSession } = state.session;
+      await saveSession({
+        ...committedSession,
+        provider: state.providerName,
+        model: state.model,
+        updatedAt: timestamp,
+        turns: [...state.turns, turn],
+        workflow: result.state,
+      });
+      const passed = result.state.steps.filter((step) => step.status === "passed").length;
+      patch({
+        notice: result.state.status === "passed"
+          ? `Workflow passed · ${passed}/${result.state.steps.length} steps verified`
+          : `${passed}/${result.state.steps.length} steps verified`,
+      });
+    } catch (error) {
+      patch({
+        panel: controller.signal.aborted
+          ? "Run stopped. The workflow was not changed."
+          : `Workflow failed: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    } finally {
+      if (runController.current === controller) runController.current = undefined;
+      patch({ busy: false, liveActivity: [] });
+    }
+  }
+
   async function runCommand(command: SlashCommand): Promise<void> {
     switch (command.name) {
+      case "plan":
+        await runNativeWorkflow("plan", command.argument);
+        return;
+      case "start-work":
+        await runNativeWorkflow("start-work", command.argument);
+        return;
+      case "loop":
+        await runNativeWorkflow("loop", command.argument);
+        return;
       case "help":
         patch({ panel: slashHelpText() });
         return;
@@ -346,7 +462,11 @@ export function useHarnessController(options: HarnessOptions): HarnessController
         return;
       case "status":
         const usage = sessionUsage(state.turns);
-        patch({ panel: `session ${state.session.id}\n${state.providerLabel} · ${state.model}\n${state.turns.length} turns · ${options.catalog.skills.length} skills\n${usage.inputTokens} input tokens · ${usage.outputTokens} output tokens\nworkspace ${options.workspaceTools.mode}` });
+        const workflow = state.session.workflow;
+        const workflowStatus = workflow
+          ? `\nworkflow ${workflow.status} · ${workflow.steps.filter((step) => step.status === "passed").length}/${workflow.steps.length} steps`
+          : "";
+        patch({ panel: `session ${state.session.id}\n${state.providerLabel} · ${state.model}\n${state.turns.length} turns · ${options.catalog.skills.length} skills\n${usage.inputTokens} input tokens · ${usage.outputTokens} output tokens\nworkspace ${options.workspaceTools.mode}${workflowStatus}` });
         return;
       case "activity":
       case "thinking":
@@ -401,6 +521,7 @@ export function useHarnessController(options: HarnessOptions): HarnessController
         activity,
         createdAt: timestamp,
         usage: result.usage,
+        ...(state.session.workflow ? { workflow: state.session.workflow } : {}),
       };
       const { redoTurns: _discardedRedo, ...committedSession } = state.session;
       await saveSession({

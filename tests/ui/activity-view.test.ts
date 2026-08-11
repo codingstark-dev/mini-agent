@@ -30,3 +30,17 @@ test("activity items retain a failed tool result", () => {
     { id: "tool:read-1", label: "read_file ../secret · outside the workspace", status: "failed" },
   ]);
 });
+
+test("activity items show native workflow roles and verification", () => {
+  const events: AgentEvent[] = [
+    { type: "workflow_role_started", id: "step-1:executor:1", role: "super-executor" },
+    { type: "workflow_role_completed", id: "step-1:executor:1", role: "super-executor" },
+    { type: "workflow_role_started", id: "step-1:verifier:1", role: "super-verifier" },
+    { type: "workflow_verification", id: "step-1:verifier:1", passed: true, detail: "step passed" },
+  ];
+
+  assert.deepEqual(activityItems(events), [
+    { id: "workflow:step-1:executor:1", label: "super-executor", status: "complete" },
+    { id: "workflow:step-1:verifier:1", label: "super-verifier · step passed", status: "complete" },
+  ]);
+});

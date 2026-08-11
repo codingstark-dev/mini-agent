@@ -47,6 +47,19 @@ export function activityItems(events: readonly AgentEvent[]): ActivityItem[] {
       case "subagent_failed":
         replaceOrAppend(items, { id: `subagent:${event.id}`, label: `${event.role} subagent · ${event.message}`, status: "failed" });
         break;
+      case "workflow_role_started":
+        replaceOrAppend(items, { id: `workflow:${event.id}`, label: event.role, status: "running" });
+        break;
+      case "workflow_role_completed":
+        replaceOrAppend(items, { id: `workflow:${event.id}`, label: event.role, status: "complete" });
+        break;
+      case "workflow_verification":
+        replaceOrAppend(items, {
+          id: `workflow:${event.id}`,
+          label: `super-verifier · ${event.detail}`,
+          status: event.passed ? "complete" : "failed",
+        });
+        break;
       case "workspace_tool_started":
         replaceOrAppend(items, { id: `tool:${event.id}`, label: event.detail, status: "running" });
         break;

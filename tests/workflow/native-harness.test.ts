@@ -5,8 +5,9 @@ import path from "node:path";
 import test from "node:test";
 
 import type { Provider, ProviderRequest, ProviderResponse } from "../../src/providers/types.js";
+import { DemoProvider } from "../../src/providers/mock.js";
 import { discoverSkills } from "../../src/skills/discovery.js";
-import { WorkspaceTools } from "../../src/tools/workspace.js";
+import { createWorkspaceTools, WorkspaceTools } from "../../src/tools/workspace.js";
 import {
   planWorkflow,
   runNextWorkflowStep,
@@ -130,4 +131,27 @@ test("loop continues step by step until the verifier passes the plan", async () 
   assert.equal(options.provider.requests.length, 4);
   assert.equal(result.usage.inputTokens, 40);
   assert.equal(result.usage.outputTokens, 20);
+});
+
+test("the offline provider demonstrates a planned file change end to end", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "mini-agent-workflow-demo-"));
+  const catalog = await discoverSkills([]);
+  const provider = new DemoProvider();
+  const workspaceTools = await createWorkspaceTools(root, "workspace-write");
+
+  const planned = await planWorkflow({
+    task: "Create an HTML page",
+    catalog,
+    provider,
+    workspaceTools,
+  });
+  const completed = await runNextWorkflowStep({
+    state: planned.state,
+    catalog,
+    provider,
+    workspaceTools,
+  });
+
+  assert.equal(completed.state.status, "passed");
+  assert.match(completed.text, /Created index\.html/);
 });

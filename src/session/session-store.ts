@@ -6,6 +6,7 @@ import path from "node:path";
 import type { AgentEvent } from "../agent/run-agent.js";
 import type { ProviderName } from "../providers/create.js";
 import type { ProviderUsage } from "../providers/types.js";
+import type { NativeWorkflowState } from "../workflow/native-harness.js";
 
 export interface SessionTurn {
   id: string;
@@ -15,6 +16,7 @@ export interface SessionTurn {
   activity: AgentEvent[];
   createdAt: string;
   usage?: ProviderUsage;
+  workflow?: NativeWorkflowState;
 }
 
 export interface AgentSession {
@@ -26,6 +28,7 @@ export interface AgentSession {
   model: string;
   turns: SessionTurn[];
   redoTurns?: SessionTurn[];
+  workflow?: NativeWorkflowState;
 }
 
 export interface SessionSummary {
@@ -86,20 +89,27 @@ export function rewindSession(
   if (!Number.isInteger(keepTurns) || keepTurns < 0 || keepTurns > session.turns.length) {
     throw new Error(`Cannot rewind session to ${keepTurns} turns`);
   }
+  const turns = session.turns.slice(0, keepTurns);
+  const { workflow: _previousWorkflow, ...current } = session;
+  const workflow = turns.at(-1)?.workflow;
   return {
-    ...session,
-    turns: session.turns.slice(0, keepTurns),
+    ...current,
+    turns,
     redoTurns: [...session.turns.slice(keepTurns), ...(session.redoTurns ?? [])],
+    ...(workflow ? { workflow } : {}),
     updatedAt: now.toISOString(),
   };
 }
 
 export function redoSession(session: AgentSession, now = new Date()): AgentSession {
   if (!session.redoTurns?.length) throw new Error("There are no rewound turns to restore");
-  const { redoTurns, ...current } = session;
+  const { redoTurns, workflow: _previousWorkflow, ...current } = session;
+  const turns = [...session.turns, ...redoTurns];
+  const workflow = turns.at(-1)?.workflow;
   return {
     ...current,
-    turns: [...session.turns, ...redoTurns],
+    turns,
+    ...(workflow ? { workflow } : {}),
     updatedAt: now.toISOString(),
   };
 }

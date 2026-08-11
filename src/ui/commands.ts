@@ -21,6 +21,9 @@ interface SuggestibleSkill {
 }
 
 export const slashCommands: readonly SlashCommandDefinition[] = [
+  { name: "plan", usage: "/plan <task>", description: "Create and store an implementation plan" },
+  { name: "start-work", usage: "/start-work", description: "Execute and verify the next planned step" },
+  { name: "loop", usage: "/loop [limit]", description: "Work until the plan passes verification" },
   { name: "model", usage: "/model [id]", description: "Choose or set the active model" },
   { name: "models", usage: "/models", description: "Choose or set the active model" },
   { name: "history", usage: "/history", description: "Resume a saved session" },

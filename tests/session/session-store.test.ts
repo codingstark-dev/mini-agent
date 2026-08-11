@@ -10,6 +10,24 @@ import {
   SessionStore,
   type AgentSession,
 } from "../../src/session/session-store.js";
+import type { NativeWorkflowState } from "../../src/workflow/native-harness.js";
+
+const workflow: NativeWorkflowState = {
+  version: 1,
+  task: "Add a command",
+  summary: "Add and test one command",
+  status: "planned",
+  createdAt: "2026-08-11T10:01:30.000Z",
+  updatedAt: "2026-08-11T10:01:30.000Z",
+  steps: [{
+    id: "step-1",
+    title: "Add command",
+    instructions: "Implement it.",
+    verification: "Run its test.",
+    status: "pending",
+    attempts: 0,
+  }],
+};
 
 test("a saved session can be listed and resumed", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "mini-agent-sessions-"));
@@ -72,8 +90,10 @@ test("rewind returns the chosen conversation point without mutating history", ()
         activations: [],
         activity: [],
         createdAt: "2026-08-11T10:02:00.000Z",
+        workflow,
       },
     ],
+    workflow,
   };
 
   const rewound = rewindSession(session, 1, new Date("2026-08-11T10:03:00.000Z"));
@@ -81,9 +101,11 @@ test("rewind returns the chosen conversation point without mutating history", ()
   assert.deepEqual(rewound.turns.map((turn) => turn.id), ["turn-one"]);
   assert.deepEqual(rewound.redoTurns?.map((turn) => turn.id), ["turn-two"]);
   assert.equal(rewound.updatedAt, "2026-08-11T10:03:00.000Z");
+  assert.equal(rewound.workflow, undefined);
   assert.equal(session.turns.length, 2);
 
   const restored = redoSession(rewound, new Date("2026-08-11T10:04:00.000Z"));
   assert.deepEqual(restored.turns.map((turn) => turn.id), ["turn-one", "turn-two"]);
   assert.equal(restored.redoTurns, undefined);
+  assert.deepEqual(restored.workflow, workflow);
 });

@@ -31,6 +31,9 @@ export type AgentEvent =
   | { type: "subagent_started"; id: string; role: string; task: string }
   | { type: "subagent_completed"; id: string; role: string }
   | { type: "subagent_failed"; id: string; role: string; message: string }
+  | { type: "workflow_role_started"; id: string; role: string }
+  | { type: "workflow_role_completed"; id: string; role: string }
+  | { type: "workflow_verification"; id: string; passed: boolean; detail: string }
   | { type: "workspace_tool_started"; id: string; name: string; detail: string }
   | { type: "workspace_tool_completed"; id: string; name: string; detail: string }
   | { type: "workspace_tool_failed"; id: string; name: string; detail: string; message: string }

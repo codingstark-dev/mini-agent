@@ -101,6 +101,9 @@ function App(properties: AppProperties): React.JSX.Element {
         <Box flexGrow={1} overflow="hidden">
           <Text color={properties.theme.muted} wrap="truncate-end">
             {harness.providerLabel} · {harness.model} · session {harness.session.id}
+            {harness.session.workflow
+              ? ` · plan ${harness.session.workflow.steps.filter((step) => step.status === "passed").length}/${harness.session.workflow.steps.length}`
+              : ""}
           </Text>
         </Box>
         <Text color={properties.theme.muted}>

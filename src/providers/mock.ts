@@ -26,6 +26,19 @@ const demoPage = `<!doctype html>
 
 export class DemoProvider implements Provider {
   async complete(request: ProviderRequest): Promise<ProviderResponse> {
+    if (request.system.includes("planning role")) {
+      return text(JSON.stringify({
+        summary: "Create a small HTML page through the workspace tools.",
+        steps: [{
+          title: "Create the page",
+          instructions: "Create index.html with a clear heading and short description.",
+          verification: "Read index.html and confirm the expected page content is present.",
+        }],
+      }));
+    }
+    if (request.system.includes("independent verifier")) {
+      return text("PASS\nThe planned step completed and the executor reported its concrete file result.");
+    }
     const toolResults = request.messages.flatMap((message) =>
       message.content.flatMap((block) => (block.type === "tool_result" ? [block.content] : [])),
     );
