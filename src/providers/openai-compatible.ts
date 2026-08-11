@@ -142,14 +142,15 @@ export class OpenAICompatibleProvider implements Provider {
     const content: ProviderResponse["content"] = [];
     if (choice.message.content) content.push({ type: "text", text: choice.message.content });
     for (const call of choice.message.tool_calls ?? []) {
-      if (!call.id || !call.function?.name) continue;
+      const callFunction = call.function;
+      if (!call.id || !callFunction?.name) continue;
       let input: unknown = {};
       try {
-        input = JSON.parse(call.function.arguments || "{}");
+        input = JSON.parse(callFunction.arguments || "{}");
       } catch {
-        throw new Error(`${this.options.name} returned invalid arguments for ${call.function.name}`);
+        throw new Error(`${this.options.name} returned invalid arguments for ${callFunction.name}`);
       }
-      content.push({ type: "tool_use", id: call.id, name: call.function.name, input });
+      content.push({ type: "tool_use", id: call.id, name: callFunction.name, input });
     }
 
     const resolvedRequestId = requestId ?? payload.id;

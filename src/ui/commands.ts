@@ -43,16 +43,20 @@ export const slashCommands: readonly SlashCommandDefinition[] = [
 ] as const;
 
 const slashCommandNames = new Set(slashCommands.map((command) => command.name));
+const hiddenHelpCommands = new Set(["continue", "models", "quit", "sessions", "thinking"]);
 
 export function isSlashCommand(name: string): boolean {
   return slashCommandNames.has(name);
 }
 
 export function slashHelpText(): string {
-  return slashCommands
-    .filter((command) => !["continue", "models", "quit", "sessions", "thinking"].includes(command.name))
-    .map((command) => `${command.usage.padEnd(17)} ${command.description.toLowerCase()}`)
-    .join("\n");
+  const lines: string[] = [];
+  for (const command of slashCommands) {
+    if (!hiddenHelpCommands.has(command.name)) {
+      lines.push(`${command.usage.padEnd(17)} ${command.description.toLowerCase()}`);
+    }
+  }
+  return lines.join("\n");
 }
 
 export function slashSuggestions(
@@ -62,23 +66,22 @@ export function slashSuggestions(
 ): SlashSuggestion[] {
   if (!input.startsWith("/") || /\s/.test(input)) return [];
 
+  const maximum = Math.max(0, limit);
   const query = input.slice(1).toLowerCase();
-  const commands: SlashSuggestion[] = slashCommands
-    .filter((command) => command.name.startsWith(query))
-    .map((command) => ({
-      name: command.name,
-      description: command.description,
-      kind: "command",
-    }));
-  const installedSkills: SlashSuggestion[] = skills
-    .filter((skill) => skill.name.startsWith(query))
-    .map((skill) => ({
-      name: skill.name,
-      description: skill.description,
-      kind: "skill",
-    }));
-
-  return [...commands, ...installedSkills].slice(0, Math.max(0, limit));
+  const suggestions: SlashSuggestion[] = [];
+  for (const command of slashCommands) {
+    if (command.name.startsWith(query)) {
+      suggestions.push({ name: command.name, description: command.description, kind: "command" });
+      if (suggestions.length === maximum) return suggestions;
+    }
+  }
+  for (const skill of skills) {
+    if (skill.name.startsWith(query)) {
+      suggestions.push({ name: skill.name, description: skill.description, kind: "skill" });
+      if (suggestions.length === maximum) return suggestions;
+    }
+  }
+  return suggestions;
 }
 
 export function parseSlashCommand(input: string): SlashCommand | undefined {
