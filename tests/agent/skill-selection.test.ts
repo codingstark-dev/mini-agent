@@ -84,6 +84,58 @@ class HistoryProvider implements Provider {
   }
 }
 
+class DelegatingProvider implements Provider {
+  readonly requests: ProviderRequest[] = [];
+
+  async complete(request: ProviderRequest): Promise<ProviderResponse> {
+    this.requests.push(structuredClone(request));
+    if (this.requests.length === 1) {
+      return {
+        content: [
+          {
+            type: "tool_use",
+            id: "delegate-one",
+            name: "delegate_task",
+            input: { role: "reviewer", task: "Check the provider boundary." },
+          },
+        ],
+        stopReason: "tool_use",
+      };
+    }
+    if (this.requests.length === 2) {
+      return {
+        content: [{ type: "text", text: "The provider boundary is narrow and typed." }],
+        stopReason: "end_turn",
+      };
+    }
+    return {
+      content: [{ type: "text", text: "Review complete." }],
+      stopReason: "end_turn",
+    };
+  }
+}
+
+test("the main agent can delegate an isolated task to a bounded subagent", async () => {
+  const catalog = await discoverSkills([]);
+  const provider = new DelegatingProvider();
+  const events: AgentEvent[] = [];
+
+  const result = await runAgent({
+    prompt: "Review the architecture",
+    catalog,
+    provider,
+    maxSubagents: 1,
+    onEvent: (event) => { events.push(event); },
+  });
+
+  assert.equal(result.text, "Review complete.");
+  assert.deepEqual(provider.requests[1]?.tools, []);
+  assert.match(JSON.stringify(provider.requests[1]?.messages), /Check the provider boundary/);
+  assert.match(JSON.stringify(provider.requests[2]?.messages), /provider boundary is narrow and typed/);
+  assert.equal(events.some((event) => event.type === "subagent_started"), true);
+  assert.equal(events.some((event) => event.type === "subagent_completed"), true);
+});
+
 test("previous session turns are included in the next model request", async () => {
   const catalog = await discoverSkills([]);
   const provider = new HistoryProvider();

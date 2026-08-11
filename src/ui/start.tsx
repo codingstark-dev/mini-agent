@@ -45,6 +45,7 @@ interface AppProperties {
   model: string;
   createProvider?: (provider: ProviderName, model: string) => Provider;
   loadModels?: (signal: AbortSignal) => Promise<OpenRouterModel[]>;
+  maxSubagents: number;
   sessionStore?: SessionStore;
   theme: Theme;
 }
@@ -79,6 +80,12 @@ function activityLabel(event: AgentEvent): string {
       return `loaded ${event.name}`;
     case "resource_read":
       return `read ${event.skill}/${event.path}`;
+    case "subagent_started":
+      return `delegated to ${event.role}`;
+    case "subagent_completed":
+      return `${event.role} subagent complete`;
+    case "subagent_failed":
+      return `${event.role} subagent failed`;
     case "complete":
       return `complete in ${event.turns} call${event.turns === 1 ? "" : "s"}`;
   }
@@ -111,6 +118,7 @@ function App({
   model: initialModel,
   createProvider,
   loadModels,
+  maxSubagents,
   sessionStore,
   theme,
 }: AppProperties): React.JSX.Element {
@@ -320,6 +328,7 @@ function App({
         history: sessionHistory(turns),
         catalog,
         provider,
+        maxSubagents,
         onEvent: (event) => {
           activity.push(event);
           setLiveActivity([...activity]);
@@ -459,6 +468,7 @@ export interface InteractiveOptions {
   model: string;
   createProvider?: (provider: ProviderName, model: string) => Provider;
   loadModels?: (signal: AbortSignal) => Promise<OpenRouterModel[]>;
+  maxSubagents: number;
   persistSessions?: boolean;
 }
 

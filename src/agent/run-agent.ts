@@ -25,6 +25,9 @@ export type AgentEvent =
   | { type: "model_response"; turn: number; stopReason: string }
   | { type: "skill_activated"; name: string }
   | { type: "resource_read"; skill: string; path: string }
+  | { type: "subagent_started"; id: string; role: string; task: string }
+  | { type: "subagent_completed"; id: string; role: string }
+  | { type: "subagent_failed"; id: string; role: string; message: string }
   | { type: "complete"; turns: number };
 
 export interface RunAgentOptions {
@@ -33,6 +36,7 @@ export interface RunAgentOptions {
   catalog: SkillCatalog;
   provider: Provider;
   maxTurns?: number;
+  maxSubagents?: number;
   signal?: AbortSignal;
   onActivation?: (name: string) => void;
   onEvent?: (event: AgentEvent) => void;
@@ -96,6 +100,25 @@ function resourceTool(active: ReadonlyMap<string, ActivatedSkill>): ProviderTool
   ];
 }
 
+function delegationTool(maxSubagents: number): ProviderTool[] {
+  if (maxSubagents === 0) return [];
+  return [
+    {
+      name: "delegate_task",
+      description: "Delegate one bounded, independent analysis task to an isolated subagent. Use sparingly when parallel expertise would materially improve the answer.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          role: { type: "string", description: "A short specialist role, such as reviewer or researcher." },
+          task: { type: "string", description: "The complete, self-contained task for the subagent." },
+        },
+        required: ["role", "task"],
+        additionalProperties: false,
+      },
+    },
+  ];
+}
+
 function activationContent(skill: ActivatedSkill): string {
   const resources = skill.resources.length > 0 ? skill.resources.map(escapeXml).join("\n") : "(none)";
   return `<activated_skill name="${escapeXml(skill.name)}">\n<instructions>\n${skill.instructions}\n</instructions>\n<available_resources>\n${resources}\n</available_resources>\n</activated_skill>`;
@@ -111,6 +134,14 @@ function requestedResource(call: ToolUseBlock): { skill: string; path: string } 
   if (!call.input || typeof call.input !== "object") return undefined;
   const { skill, path } = call.input as Record<string, unknown>;
   return typeof skill === "string" && typeof path === "string" ? { skill, path } : undefined;
+}
+
+function requestedDelegation(call: ToolUseBlock): { role: string; task: string } | undefined {
+  if (!call.input || typeof call.input !== "object") return undefined;
+  const { role, task } = call.input as Record<string, unknown>;
+  return typeof role === "string" && role.trim() && typeof task === "string" && task.trim()
+    ? { role: role.trim(), task: task.trim() }
+    : undefined;
 }
 
 export async function runAgent(options: RunAgentOptions): Promise<AgentResult> {
@@ -139,13 +170,19 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentResult> {
   ];
   const requestIds: string[] = [];
   const maxTurns = options.maxTurns ?? 6;
+  const maxSubagents = Math.max(0, Math.floor(options.maxSubagents ?? 2));
+  let subagentsUsed = 0;
 
   for (let turn = 0; turn < maxTurns; turn += 1) {
     options.onEvent?.({ type: "model_request", turn: turn + 1 });
     const response = await options.provider.complete({
       system: buildSystemPrompt(options.catalog),
       messages,
-      tools: [...activationTool(options.catalog.skills), ...resourceTool(active)],
+      tools: [
+        ...activationTool(options.catalog.skills),
+        ...resourceTool(active),
+        ...delegationTool(maxSubagents),
+      ],
       ...(options.signal ? { signal: options.signal } : {}),
     });
     options.onEvent?.({ type: "model_response", turn: turn + 1, stopReason: response.stopReason });
@@ -171,6 +208,76 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentResult> {
 
     const results: ProviderContent[] = [];
     for (const call of calls) {
+      if (call.name === "delegate_task") {
+        const requested = requestedDelegation(call);
+        if (!requested) {
+          results.push({
+            type: "tool_result",
+            toolUseId: call.id,
+            content: "Subagent delegation requires a role and a self-contained task.",
+            isError: true,
+          } satisfies ToolResultBlock);
+          continue;
+        }
+        if (subagentsUsed >= maxSubagents) {
+          results.push({
+            type: "tool_result",
+            toolUseId: call.id,
+            content: `Subagent limit reached (${maxSubagents}).`,
+            isError: true,
+          } satisfies ToolResultBlock);
+          continue;
+        }
+        subagentsUsed += 1;
+        options.onEvent?.({
+          type: "subagent_started",
+          id: call.id,
+          role: requested.role,
+          task: requested.task,
+        });
+        try {
+          const delegated = await options.provider.complete({
+            system: `You are a focused ${requested.role} subagent. Complete only the assigned task and return concise findings to the main agent. Do not delegate further.`,
+            messages: [{ role: "user", content: [{ type: "text", text: requested.task }] }],
+            tools: [],
+            ...(options.signal ? { signal: options.signal } : {}),
+          });
+          if (delegated.requestId) requestIds.push(delegated.requestId);
+          const findings = delegated.content
+            .flatMap((block) => (block.type === "text" ? [block.text] : []))
+            .join("\n")
+            .trim();
+          if (!findings || delegated.stopReason === "max_tokens" || delegated.stopReason === "other") {
+            throw new Error(`Subagent stopped without complete findings (${delegated.stopReason})`);
+          }
+          results.push({
+            type: "tool_result",
+            toolUseId: call.id,
+            content: findings,
+          } satisfies ToolResultBlock);
+          options.onEvent?.({
+            type: "subagent_completed",
+            id: call.id,
+            role: requested.role,
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          results.push({
+            type: "tool_result",
+            toolUseId: call.id,
+            content: message,
+            isError: true,
+          } satisfies ToolResultBlock);
+          options.onEvent?.({
+            type: "subagent_failed",
+            id: call.id,
+            role: requested.role,
+            message,
+          });
+        }
+        continue;
+      }
+
       if (call.name === "read_skill_resource") {
         const requested = requestedResource(call);
         const skill = requested ? active.get(requested.skill) : undefined;

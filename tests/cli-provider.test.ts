@@ -56,3 +56,10 @@ test("short options select an OpenRouter model", async () => {
   assert.equal(result.stderr, "");
   assert.match(result.stdout, /demo provider/i);
 });
+
+test("the subagent budget can be configured from the CLI", async () => {
+  const result = await runCli(["--subagents", "0", "--mock", "hello"], process.env);
+
+  assert.equal(result.code, 0);
+  assert.equal(result.stderr, "");
+});

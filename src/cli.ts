@@ -23,6 +23,7 @@ interface Options {
   mock: boolean;
   model: string;
   provider: ProviderName;
+  maxSubagents: number;
   command?: "list" | "doctor";
 }
 
@@ -33,6 +34,7 @@ function parseArguments(arguments_: string[]): Options {
   let mock = false;
   let model = process.env.MINI_AGENT_MODEL;
   let provider = parseProviderName(process.env.MINI_AGENT_PROVIDER ?? "anthropic");
+  let maxSubagents = Number(process.env.MINI_AGENT_SUBAGENTS ?? 2);
   let command: Options["command"];
 
   for (let index = 0; index < arguments_.length; index += 1) {
@@ -51,6 +53,11 @@ function parseArguments(arguments_: string[]): Options {
       if (!value) throw new Error("--model requires a value");
       model = value;
       index += 1;
+    } else if (argument === "--subagents") {
+      const value = arguments_[index + 1];
+      if (!value) throw new Error("--subagents requires a value");
+      maxSubagents = Number(value);
+      index += 1;
     } else if (argument === "skills") {
       const next = arguments_[index + 1];
       if (next !== "list" && next !== "doctor") throw new Error("skills requires list or doctor");
@@ -61,6 +68,10 @@ function parseArguments(arguments_: string[]): Options {
     } else if (argument) prompt.push(argument);
   }
 
+  if (!Number.isInteger(maxSubagents) || maxSubagents < 0 || maxSubagents > 8) {
+    throw new Error("--subagents must be an integer from 0 to 8");
+  }
+
   return {
     prompt: prompt.join(" ").trim(),
     debug,
@@ -68,12 +79,13 @@ function parseArguments(arguments_: string[]): Options {
     mock,
     model: model ?? defaultModelFor(provider),
     provider,
+    maxSubagents,
     ...(command ? { command } : {}),
   };
 }
 
 function printHelp(): void {
-  process.stdout.write(`mini-agent [options] "prompt"\n\nOptions:\n  -p, --provider <name>  anthropic, openrouter, or vercel\n  -m, --model <id>       any model ID supported by the provider\n      --json             Print structured output\n      --debug            Print skill activations to stderr\n      --mock             Run the deterministic offline demo\n\nCommands:\n  skills list\n  skills doctor\n`);
+  process.stdout.write(`mini-agent [options] "prompt"\n\nOptions:\n  -p, --provider <name>  anthropic, openrouter, or vercel\n  -m, --model <id>       any model ID supported by the provider\n      --subagents <n>    delegation limit from 0 to 8 (default: 2)\n      --json             Print structured output\n      --debug            Print skill activations to stderr\n      --mock             Run the deterministic offline demo\n\nCommands:\n  skills list\n  skills doctor\n`);
 }
 
 async function main(): Promise<void> {
@@ -114,6 +126,7 @@ async function main(): Promise<void> {
       providerName: options.provider,
       model: options.mock ? "offline demo" : options.model,
       providerLabel: options.mock ? "Demo" : providerLabel(options.provider),
+      maxSubagents: options.maxSubagents,
       persistSessions: !options.mock,
       ...(!options.mock
         ? {
@@ -142,6 +155,7 @@ async function main(): Promise<void> {
         ? new DemoProvider()
         : createProvider(options.provider, options.model),
       signal: controller.signal,
+      maxSubagents: options.maxSubagents,
       ...(options.debug
         ? { onActivation: (name: string): void => { process.stderr.write(`activated ${name}\n`); } }
         : {}),
