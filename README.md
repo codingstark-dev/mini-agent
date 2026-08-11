@@ -31,8 +31,9 @@ keeps recent model, skill, tool, and subagent activity visible. Press `Escape` t
 stop the current run without adding a partial turn to the session.
 
 Interactive sessions are saved locally and can be resumed after restarting. Type
-`/help` for the command list. The main commands are `/model`, `/history`, `/resume`,
-`/rewind`, `/undo`, `/redo`, `/new`, `/skills`, `/tools`, `/status`, and `/activity`.
+`/help` for the command list. The main commands are `/plan`, `/start-work`, `/loop`,
+`/model`, `/history`, `/resume`, `/rewind`, `/undo`, `/redo`, `/new`, `/skills`,
+`/tools`, `/status`, and `/activity`.
 Rewind affects conversation context only and restores the removed prompt for editing;
 it never claims to restore files.
 
@@ -69,6 +70,12 @@ npm run demo:mock
 npm run dev -- --mock --workspace /tmp/mini-agent-demo "Create an HTML page"
 ```
 
+The onboarding demo starts with the current linked skill's required header:
+
+```text
+> Welcome to our Command Code assignment agent!
+```
+
 Example prompts:
 
 ```text
@@ -93,6 +100,34 @@ The main model may delegate bounded, tool-free analysis tasks to isolated subage
 The default limit is two per run; set it with `--subagents <n>` or
 `MINI_AGENT_SUBAGENTS`. Set the limit to `0` to disable delegation.
 
+## Native workflow
+
+The optional native harness adds a small plan → execute → verify loop without
+changing the ordinary prompt flow:
+
+```text
+/plan Add validation to the config loader
+/start-work
+/loop 6
+```
+
+`/plan` uses read-only tools and stores a decision-complete plan in the current
+session. `/start-work` gives the next step to `super-executor`, then asks
+`super-verifier` to inspect it independently. `/loop` repeats that cycle until all
+steps pass or the bounded iteration limit is reached. Plans survive `/history` and
+follow `/rewind` and `/redo` with the conversation.
+
+Set `VERIFY_CMD` when there is a canonical local check. Its exit status and bounded
+output become evidence for the verifier:
+
+```bash
+VERIFY_CMD="npm test" npm run dev
+```
+
+The five focused role definitions live in `agents/`: `super-planner`,
+`super-executor`, `super-verifier`, `super-explorer`, and `super-oracle`. The
+implementation is part of this repository and is released under MIT.
+
 ## How it is put together
 
 ```text
@@ -109,17 +144,20 @@ CLI or Ink UI
       ├── workspace tools ─── list, rg search, read, write, edit
       └── activity events
 
+  native workflow ─── plan → one step → independent verification
   session store ─── history, resume, rewind, redo
 ```
 
 ```text
 .skills/                 bundled assessment skills
+agents/                  focused native workflow roles
 src/agent/               model and tool loop
 src/providers/           official SDK and lightweight API adapters
 src/session/             atomic local history and rewind state
 src/skills/              discovery, validation, activation, resources
 src/tools/               workspace boundary and file tools
 src/ui/                  React/Ink interface
+src/workflow/            stored plan, execution, and verification loop
 tests/                   behavior at the public seams
 scripts/                 build, size, and release checks
 ```
@@ -140,14 +178,14 @@ npm run check
 npm run pack:release
 ```
 
-`npm run check` runs the type checker, thirty-five behavior tests, both builds, and byte
+`npm run check` runs the type checker, forty-one behavior tests, both builds, and byte
 budgets. The current arm64 macOS build measures:
 
 | Artifact | Size |
 | --- | ---: |
-| Lite, headless CLI | 320,262 bytes |
-| Full CLI, React UI, skills, and notices | 1,050,281 bytes |
-| Compressed release tarball | 430,839 bytes |
+| Lite, headless CLI | 320,786 bytes |
+| Full CLI, React UI, skills, roles, and notices | 1,064,236 bytes |
+| Compressed release tarball | 435,647 bytes |
 
 The full build uses the official Anthropic SDK. The lite build uses Node's native
 `fetch` for every provider, which keeps it well below 1 MB. Both require an installed
@@ -160,11 +198,11 @@ credentials were unavailable.
 
 The terminal was also exercised at 80×24 for slash completion, model selection,
 fixed-height rendering, session controls, persistent activity rows, the token bar,
-workspace tool creation, and modal cancellation.
+workspace tool creation, the native plan and verification flow, and modal cancellation.
 
 ## Submission notes
 
-I spent about three hours on specification review, implementation, tests, and
+I spent about five hours on specification review, implementation, tests, and
 packaging.
 
 The part I paid most attention to was proving that instructions are absent before
@@ -173,6 +211,11 @@ skills also needed a narrow file boundary so `..`, absolute paths, and symlink e
 cannot read outside the active skill. Workspace file tools use the same boundary and
 do not expose an unrestricted shell. The lite and full builds use separate Claude
 adapters so the React UI and SDK do not consume the headless size budget.
+
+The native workflow was interesting for a different reason: execution and
+verification must not collapse into the same self-assessment. The executor receives
+one stored step, while the verifier gets read-only tools plus any `VERIFY_CMD`
+evidence and must return a clear pass or fail before the plan advances.
 
 I kept the submission focused on the requested Node CLI, Sonnet, and Agent Skills
 behavior. OpenRouter and Vercel AI Gateway are small provider adapters rather than a
