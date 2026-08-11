@@ -16,15 +16,6 @@ const inkDevtoolsStub = {
   },
 };
 
-const liteProvider = {
-  name: "lite-anthropic-provider",
-  setup(builder) {
-    builder.onResolve({ filter: /\/providers\/anthropic\.js$/ }, () => ({
-      path: new URL("../src/providers/anthropic-lite.ts", import.meta.url).pathname,
-    }));
-  },
-};
-
 const liteUi = {
   name: "lite-ui-stub",
   setup(builder) {
@@ -70,7 +61,7 @@ await build({
   entryPoints: ["src/cli.ts"],
   outfile: "dist/lite.mjs",
   splitting: false,
-  plugins: [liteProvider, liteUi],
+  plugins: [liteUi],
   define: { __MINI_AGENT_LITE__: "true", "process.env.DEV": '"false"' },
 });
 

@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { AnthropicProvider } from "../../src/providers/anthropic-lite.js";
+import { AnthropicProvider } from "../../src/providers/anthropic.js";
 
-test("the lite provider calls the Claude Messages API without an SDK dependency", async () => {
+test("the Anthropic provider calls the Claude Messages API directly", async () => {
   let request: RequestInit | undefined;
   const provider = new AnthropicProvider({
     apiKey: "test-key",
