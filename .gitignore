@@ -7,4 +7,5 @@ artifacts/
 .env.*
 !.env.example
 coverage/
+/docs/
 .DS_Store

@@ -25,6 +25,12 @@ When OpenRouter is selected, press `Ctrl+P` to open the model picker. It fetches
 tool-capable models on demand, supports search and arrow-key navigation, and accepts
 a complete custom `provider/model` ID. The next prompt uses the selected model.
 
+Interactive sessions are saved locally and can be resumed after restarting. Type
+`/help` for the command list. The main commands are `/model`, `/history`, `/resume`,
+`/rewind`, `/undo`, `/redo`, `/new`, `/skills`, `/status`, and `/activity`.
+Rewind affects conversation context only and restores the removed prompt for editing;
+it never claims to restore files.
+
 Anthropic is the default. OpenRouter and Vercel AI Gateway use the same agent and
 skill loop through their OpenAI-compatible endpoints:
 
@@ -69,6 +75,10 @@ npm run dev -- "/welcome-me show me around"
 
 The direct Anthropic default is `claude-sonnet-5`.
 
+The main model may delegate bounded, tool-free analysis tasks to isolated subagents.
+The default limit is two per run; set it with `--subagents <n>` or
+`MINI_AGENT_SUBAGENTS`. Set the limit to `0` to disable delegation.
+
 ## How it is put together
 
 ```text
@@ -78,16 +88,20 @@ CLI or Ink UI
       │              ├── Anthropic
       │              ├── OpenRouter
       │              └── Vercel AI Gateway
-      │
-  skill catalog
-      ├── activate_skill
-      └── read_skill_resource
+      ├── skill catalog
+      │     ├── activate_skill
+      │     └── read_skill_resource
+      ├── bounded subagent requests
+      └── activity events
+
+  session store ─── history, resume, rewind, redo
 ```
 
 ```text
 .skills/                 bundled assessment skills
 src/agent/               model and tool loop
 src/providers/           official SDK and lightweight API adapters
+src/session/             atomic local history and rewind state
 src/skills/              discovery, validation, activation, resources
 src/ui/                  React/Ink interface
 tests/                   behavior at the public seams
@@ -98,9 +112,10 @@ Skill discovery checks bundled skills, `~/.agents/skills`, `.agents/skills`, and
 assignment's `.skills` directory. Project skills take precedence. Invalid skills are
 reported by `skills doctor` instead of breaking the session.
 
-The production agent relies on Sonnet's judgment to choose a skill from its
-description. The `--mock` option uses a tiny deterministic fixture solely so the
-demo and tests work without credentials.
+The default production path relies on Sonnet's judgment to choose a skill from its
+description. Other configured models use the same tool interface. The `--mock`
+option uses a tiny deterministic fixture solely so the demo and tests work without
+credentials.
 
 ## Verification
 
@@ -109,14 +124,14 @@ npm run check
 npm run pack:release
 ```
 
-`npm run check` runs the type checker, nineteen behavior tests, both builds, and byte
+`npm run check` runs the type checker, twenty-five behavior tests, both builds, and byte
 budgets. The current arm64 macOS build measures:
 
 | Artifact | Size |
 | --- | ---: |
-| Lite, headless CLI | 308,378 bytes |
-| Full CLI, React UI, skills, and notices | 1,021,288 bytes |
-| Compressed release tarball | about 420 KB |
+| Lite, headless CLI | 311,207 bytes |
+| Full CLI, React UI, skills, and notices | 1,034,885 bytes |
+| Compressed release tarball | 422,601 bytes |
 
 The full build uses the official Anthropic SDK. The lite build uses Node's native
 `fetch` for every provider, which keeps it well below 1 MB. Both require an installed
@@ -126,6 +141,9 @@ tarball contains no production dependency declarations.
 The deterministic suite exercises the complete selection loop without credentials.
 A live Sonnet smoke test was not run in the build environment because provider
 credentials were unavailable.
+
+The terminal was also exercised at 80×24 for model selection, command help, session
+resume, visible activity, undo, redo, restored drafts, and modal cancellation.
 
 ## Submission notes
 
