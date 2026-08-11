@@ -9,6 +9,7 @@
   "files": [
     "dist",
     ".skills",
+    "agents",
     "LICENSE",
     "THIRD_PARTY_NOTICES.md"
   ],

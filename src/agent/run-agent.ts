@@ -47,6 +47,7 @@ export interface RunAgentOptions {
   signal?: AbortSignal;
   onActivation?: (name: string) => void;
   onEvent?: (event: AgentEvent) => void;
+  systemGuidance?: string;
 }
 
 function escapeXml(value: string): string {
@@ -58,11 +59,15 @@ function escapeXml(value: string): string {
     .replaceAll("'", "&apos;");
 }
 
-export function buildSystemPrompt(catalog: SkillCatalog, hasWorkspaceTools = false): string {
+export function buildSystemPrompt(
+  catalog: SkillCatalog,
+  hasWorkspaceTools = false,
+  systemGuidance?: string,
+): string {
   const workspaceGuidance = hasWorkspaceTools
     ? " When the user asks you to inspect or change project files, use the workspace tools instead of guessing. After a change, report the paths you changed."
     : "";
-  const introduction = `You are a concise coding assistant. Answer the user's request directly.${workspaceGuidance}`;
+  const introduction = `You are a concise coding assistant. Answer the user's request directly.${workspaceGuidance}${systemGuidance ? `\n\n${systemGuidance}` : ""}`;
   if (catalog.skills.length === 0) return introduction;
 
   const skills = catalog.skills
@@ -204,7 +209,7 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentResult> {
   for (let turn = 0; turn < maxTurns; turn += 1) {
     options.onEvent?.({ type: "model_request", turn: turn + 1 });
     const response = await options.provider.complete({
-      system: buildSystemPrompt(options.catalog, Boolean(options.workspaceTools)),
+      system: buildSystemPrompt(options.catalog, Boolean(options.workspaceTools), options.systemGuidance),
       messages,
       tools: [
         ...activationTool(options.catalog.skills),
