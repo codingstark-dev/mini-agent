@@ -39,13 +39,13 @@ function parseArguments(arguments_: string[]): Options {
     if (argument === "--debug") debug = true;
     else if (argument === "--json") json = true;
     else if (argument === "--mock") mock = true;
-    else if (argument === "--provider") {
+    else if (argument === "--provider" || argument === "-p") {
       const value = arguments_[index + 1];
       if (!value) throw new Error("--provider requires a value");
       provider = parseProviderName(value);
       index += 1;
     }
-    else if (argument === "--model") {
+    else if (argument === "--model" || argument === "-m") {
       const value = arguments_[index + 1];
       if (!value) throw new Error("--model requires a value");
       model = value;
@@ -72,7 +72,7 @@ function parseArguments(arguments_: string[]): Options {
 }
 
 function printHelp(): void {
-  process.stdout.write(`mini-agent [options] "prompt"\n\nOptions:\n  --provider <name>  anthropic, openrouter, or vercel\n  --model <id>       Override the provider's default model\n  --json             Print structured output\n  --debug            Print skill activations to stderr\n  --mock             Run the deterministic offline demo\n\nCommands:\n  skills list\n  skills doctor\n`);
+  process.stdout.write(`mini-agent [options] "prompt"\n\nOptions:\n  -p, --provider <name>  anthropic, openrouter, or vercel\n  -m, --model <id>       any model ID supported by the provider\n      --json             Print structured output\n      --debug            Print skill activations to stderr\n      --mock             Run the deterministic offline demo\n\nCommands:\n  skills list\n  skills doctor\n`);
 }
 
 async function main(): Promise<void> {

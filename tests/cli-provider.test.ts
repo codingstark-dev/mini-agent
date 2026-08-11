@@ -5,6 +5,7 @@ import test from "node:test";
 
 interface CliResult {
   code: number | null;
+  stdout: string;
   stderr: string;
 }
 
@@ -12,13 +13,16 @@ function runCli(arguments_: string[], environment: NodeJS.ProcessEnv): Promise<C
   return new Promise((resolveResult, reject) => {
     const child = spawn(process.execPath, ["--import", "tsx", resolve("src/cli.ts"), ...arguments_], {
       env: environment,
-      stdio: ["ignore", "ignore", "pipe"],
+      stdio: ["ignore", "pipe", "pipe"],
     });
+    let stdout = "";
     let stderr = "";
+    child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => { stdout += chunk; });
     child.stderr.on("data", (chunk: string) => { stderr += chunk; });
     child.once("error", reject);
-    child.once("close", (code) => { resolveResult({ code, stderr }); });
+    child.once("close", (code) => { resolveResult({ code, stdout, stderr }); });
   });
 }
 
@@ -40,4 +44,15 @@ test("Vercel AI Gateway selection asks for its own API key", async () => {
 
   assert.equal(result.code, 1);
   assert.match(result.stderr, /AI_GATEWAY_API_KEY/);
+});
+
+test("short options select an OpenRouter model", async () => {
+  const result = await runCli(
+    ["-p", "openrouter", "-m", "deepseek/deepseek-v4-flash", "--mock", "hello"],
+    process.env,
+  );
+
+  assert.equal(result.code, 0);
+  assert.equal(result.stderr, "");
+  assert.match(result.stdout, /demo provider/i);
 });
