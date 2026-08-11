@@ -1,6 +1,12 @@
 #!/usr/bin/env node
 import { runAgent } from "./agent/run-agent.js";
-import { AnthropicProvider } from "./providers/anthropic.js";
+import {
+  createProvider,
+  defaultModelFor,
+  parseProviderName,
+  providerLabel,
+  type ProviderName,
+} from "./providers/create.js";
 import { DemoProvider } from "./providers/mock.js";
 import { discoverSkills } from "./skills/discovery.js";
 import { defaultSkillScopes } from "./skills/scopes.js";
@@ -15,6 +21,7 @@ interface Options {
   json: boolean;
   mock: boolean;
   model: string;
+  provider: ProviderName;
   command?: "list" | "doctor";
 }
 
@@ -23,7 +30,8 @@ function parseArguments(arguments_: string[]): Options {
   let debug = false;
   let json = false;
   let mock = false;
-  let model = process.env.MINI_AGENT_MODEL ?? "claude-sonnet-5";
+  let model = process.env.MINI_AGENT_MODEL;
+  let provider = parseProviderName(process.env.MINI_AGENT_PROVIDER ?? "anthropic");
   let command: Options["command"];
 
   for (let index = 0; index < arguments_.length; index += 1) {
@@ -31,6 +39,12 @@ function parseArguments(arguments_: string[]): Options {
     if (argument === "--debug") debug = true;
     else if (argument === "--json") json = true;
     else if (argument === "--mock") mock = true;
+    else if (argument === "--provider") {
+      const value = arguments_[index + 1];
+      if (!value) throw new Error("--provider requires a value");
+      provider = parseProviderName(value);
+      index += 1;
+    }
     else if (argument === "--model") {
       const value = arguments_[index + 1];
       if (!value) throw new Error("--model requires a value");
@@ -46,11 +60,19 @@ function parseArguments(arguments_: string[]): Options {
     } else if (argument) prompt.push(argument);
   }
 
-  return { prompt: prompt.join(" ").trim(), debug, json, mock, model, ...(command ? { command } : {}) };
+  return {
+    prompt: prompt.join(" ").trim(),
+    debug,
+    json,
+    mock,
+    model: model ?? defaultModelFor(provider),
+    provider,
+    ...(command ? { command } : {}),
+  };
 }
 
 function printHelp(): void {
-  process.stdout.write(`mini-agent [options] "prompt"\n\nOptions:\n  --model <id>  Claude model (default: claude-sonnet-5)\n  --json        Print structured output\n  --debug       Print skill activations to stderr\n  --mock        Run the deterministic offline demo\n\nCommands:\n  skills list\n  skills doctor\n`);
+  process.stdout.write(`mini-agent [options] "prompt"\n\nOptions:\n  --provider <name>  anthropic, openrouter, or vercel\n  --model <id>       Override the provider's default model\n  --json             Print structured output\n  --debug            Print skill activations to stderr\n  --mock             Run the deterministic offline demo\n\nCommands:\n  skills list\n  skills doctor\n`);
 }
 
 async function main(): Promise<void> {
@@ -80,21 +102,18 @@ async function main(): Promise<void> {
       return;
     }
 
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!options.mock && !apiKey) {
-      throw new Error("Set ANTHROPIC_API_KEY or use --mock for the offline demo.");
-    }
     const provider = options.mock
       ? new DemoProvider()
-      : new AnthropicProvider({ apiKey: apiKey as string, model: options.model });
+      : createProvider(options.provider, options.model);
     const { startInteractive } = await import("./ui/start.js");
-    await startInteractive({ catalog, provider, model: options.mock ? "offline demo" : options.model });
+    await startInteractive({
+      catalog,
+      provider,
+      model: options.mock
+        ? "offline demo"
+        : `${providerLabel(options.provider)} · ${options.model}`,
+    });
     return;
-  }
-
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!options.mock && !apiKey) {
-    throw new Error("Set ANTHROPIC_API_KEY or use --mock for the offline demo.");
   }
 
   const controller = new AbortController();
@@ -106,7 +125,7 @@ async function main(): Promise<void> {
       catalog,
       provider: options.mock
         ? new DemoProvider()
-        : new AnthropicProvider({ apiKey: apiKey as string, model: options.model }),
+        : createProvider(options.provider, options.model),
       signal: controller.signal,
       ...(options.debug
         ? { onActivation: (name: string): void => { process.stderr.write(`activated ${name}\n`); } }
