@@ -7,11 +7,11 @@ import type { Provider } from "../providers/types.js";
 import { SessionStore, type SessionTurn } from "../session/session-store.js";
 import type { SkillCatalog } from "../skills/discovery.js";
 import type { WorkspaceTools } from "../tools/workspace.js";
-import { ActivityView, activityItems, activityLineCount } from "./activity-view.js";
+import { ActivityView } from "./activity-view.js";
 import { ChoicePicker } from "./choice-picker.js";
+import { LiveTurn, liveTurnLineCount } from "./live-turn.js";
 import { ModelPicker } from "./model-picker.js";
 import { SlashSuggestions } from "./slash-suggestions.js";
-import { InlineLoader, TextLoader } from "./terminal-loaders.js";
 import { useHarnessController } from "./use-harness.js";
 import { fitRecentTurns } from "./viewport.js";
 
@@ -88,22 +88,19 @@ function App(properties: AppProperties): React.JSX.Element {
   const pickerOpen = harness.modelPickerOpen || Boolean(harness.picker);
   const panelRows = harness.panel ? harness.panel.split("\n").length + 2 : 0;
   const suggestionRows = harness.suggestions.length > 0 ? harness.suggestions.length + 3 : 0;
+  const liveRows = harness.busy
+    ? liveTurnLineCount(harness.liveActivity, harness.streamingText, columns)
+    : 0;
   const reservedRows = 4 + panelRows + suggestionRows +
     (harness.notice ? 1 : 0) +
     (harness.activeSkills.length > 0 ? 1 : 0) +
-    (harness.busy ? activityLineCount(harness.liveActivity, 5) : 0);
+    liveRows;
   const turnWindow = fitRecentTurns(
     harness.turns,
     Math.max(1, rows - reservedRows),
     columns,
     harness.showActivity,
   );
-  const currentActivity = activityItems(harness.liveActivity).at(-1)?.label ?? "calling the model";
-  const streamedLine = harness.streamingText.replaceAll(/\s+/g, " ").trim();
-  const loadingText = streamedLine
-    ? streamedLine.slice(-Math.max(12, columns - 8))
-    : currentActivity;
-
   return (
     <Box flexDirection="column" height={rows} overflow="hidden" paddingX={1}>
       <Box flexShrink={0} gap={1} width="100%">
@@ -180,14 +177,19 @@ function App(properties: AppProperties): React.JSX.Element {
                   theme={properties.theme}
                 />
               ))}
+              {harness.busy && harness.pendingPrompt && (
+                <LiveTurn
+                  accent={properties.theme.accent}
+                  answer={properties.theme.answer}
+                  columns={columns}
+                  events={harness.liveActivity}
+                  muted={properties.theme.muted}
+                  prompt={harness.pendingPrompt}
+                  promptColor={properties.theme.prompt}
+                  streamingText={harness.streamingText}
+                />
+              )}
             </Box>
-            {harness.busy && harness.liveActivity.length > 0 && (
-              <ActivityView
-                accent={properties.theme.accent}
-                events={harness.liveActivity}
-                muted={properties.theme.muted}
-              />
-            )}
             {!harness.busy && harness.suggestions.length > 0 && (
               <SlashSuggestions
                 accent={properties.theme.accent}
@@ -202,25 +204,19 @@ function App(properties: AppProperties): React.JSX.Element {
 
       {!pickerOpen && (
         <Box flexDirection="column" flexShrink={0}>
-          <Box>
-            <Text color={properties.theme.prompt}>❯ </Text>
-            <Text>
-              {harness.keyEntryOpen
-                ? `API key (${harness.setupProvider ? providerLabel(harness.setupProvider) : "provider"}): ${"•".repeat(Math.min(harness.keyValue.length, 48))}`
-                : harness.modelEntryOpen
-                  ? `Model: ${harness.input}`
-                : harness.busy
-                  ? (
-                    <>
-                      <InlineLoader color={properties.theme.accent} variant="matrix" size={24} />
-                      <Text> </Text>
-                      <TextLoader color={properties.theme.accent} text={loadingText} variant="focus" />
-                    </>
-                  )
-                  : harness.input}
-            </Text>
-            {!harness.busy && <Text inverse> </Text>}
-          </Box>
+          {!harness.busy && (
+            <Box>
+              <Text color={properties.theme.prompt}>❯ </Text>
+              <Text>
+                {harness.keyEntryOpen
+                  ? `API key (${harness.setupProvider ? providerLabel(harness.setupProvider) : "provider"}): ${"•".repeat(Math.min(harness.keyValue.length, 48))}`
+                  : harness.modelEntryOpen
+                    ? `Model: ${harness.input}`
+                    : harness.input}
+              </Text>
+              <Text inverse> </Text>
+            </Box>
+          )}
           <Text color={properties.theme.muted} wrap="truncate-end">
             {harness.keyEntryOpen
               ? "Enter save · Esc cancel · stored with owner-only permissions"

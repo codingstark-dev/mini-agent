@@ -56,6 +56,7 @@ interface HarnessState {
   turns: SessionTurn[];
   liveActivity: AgentEvent[];
   streamingText: string;
+  pendingPrompt: string;
   showActivity: boolean;
   modelPickerOpen: boolean;
   picker: PickerState | undefined;
@@ -149,6 +150,7 @@ export function useHarnessController(options: HarnessOptions): HarnessController
     turns: [],
     liveActivity: [],
     streamingText: "",
+    pendingPrompt: "",
     showActivity: true,
     modelPickerOpen: false,
     picker: undefined,
@@ -382,7 +384,19 @@ export function useHarnessController(options: HarnessOptions): HarnessController
       return;
     }
 
-    patch({ busy: true, panel: "", notice: "", liveActivity: [] });
+    const workflowPrompt = command === "plan"
+      ? `/plan ${argument}`
+      : command === "loop" && argument
+        ? `/loop ${argument}`
+        : `/${command}`;
+    patch({
+      busy: true,
+      panel: "",
+      notice: "",
+      liveActivity: [],
+      streamingText: "",
+      pendingPrompt: workflowPrompt,
+    });
     const controller = new AbortController();
     runController.current = controller;
     const activity: AgentEvent[] = [];
@@ -417,14 +431,9 @@ export function useHarnessController(options: HarnessOptions): HarnessController
       }
 
       const timestamp = new Date().toISOString();
-      const prompt = command === "plan"
-        ? `/plan ${argument}`
-        : command === "loop" && argument
-          ? `/loop ${argument}`
-          : `/${command}`;
       const turn: SessionTurn = {
         id: `${state.session.id}-${state.turns.length + 1}`,
-        prompt,
+        prompt: workflowPrompt,
         answer: result.text,
         activations: [],
         activity,
@@ -455,7 +464,7 @@ export function useHarnessController(options: HarnessOptions): HarnessController
       });
     } finally {
       if (runController.current === controller) runController.current = undefined;
-      patch({ busy: false, liveActivity: [] });
+      patch({ busy: false, liveActivity: [], streamingText: "", pendingPrompt: "" });
     }
   }
 
@@ -578,7 +587,15 @@ export function useHarnessController(options: HarnessOptions): HarnessController
       return;
     }
 
-    patch({ input: "", busy: true, panel: "", notice: "", liveActivity: [], streamingText: "" });
+    patch({
+      input: "",
+      busy: true,
+      panel: "",
+      notice: "",
+      liveActivity: [],
+      streamingText: "",
+      pendingPrompt: prompt,
+    });
     const controller = new AbortController();
     runController.current = controller;
     const activity: AgentEvent[] = [];
@@ -629,7 +646,7 @@ export function useHarnessController(options: HarnessOptions): HarnessController
       });
     } finally {
       if (runController.current === controller) runController.current = undefined;
-      patch({ busy: false, liveActivity: [], streamingText: "" });
+      patch({ busy: false, liveActivity: [], streamingText: "", pendingPrompt: "" });
     }
   }
 

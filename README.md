@@ -35,8 +35,8 @@ Type `/` to search commands and installed skills, use the arrow keys to choose, 
 press `Tab` to complete. The interface stays inside the current terminal height and
 keeps recent model, skill, tool, and subagent activity visible. While work is running,
 an animated matrix marker shows the current activity and incoming response text streams
-through a focus label. Press `Escape` to stop the current run without adding a partial
-turn to the session.
+through a focus label inside the conversation; the composer remains clear. Press
+`Escape` to stop the current run without adding a partial turn to the session.
 
 Interactive sessions are saved locally and can be resumed after restarting. Type
 `/help` for the command list. The main commands are `/plan`, `/start-work`, `/loop`,
@@ -190,14 +190,14 @@ npm run check
 npm run pack:release
 ```
 
-`npm run check` runs the type checker, fifty-seven behavior tests, both builds, and byte
+`npm run check` runs the type checker, fifty-nine behavior tests, both builds, and byte
 budgets. The current arm64 macOS build measures:
 
 | Artifact | Size |
 | --- | ---: |
 | Lite, headless CLI | 154,266 bytes |
-| Full CLI, React UI, skills, roles, and notices | 904,334 bytes |
-| Compressed release tarball | 346,572 bytes |
+| Full CLI, React UI, skills, roles, and notices | 905,020 bytes |
+| Compressed release tarball | 346,730 bytes |
 
 Every provider uses Node's native `fetch`, keeping both builds below 1 MB. Both require
 an installed Node runtime; neither measurement hides an embedded standalone runtime.
