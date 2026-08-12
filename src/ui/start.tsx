@@ -7,10 +7,11 @@ import type { Provider } from "../providers/types.js";
 import { SessionStore, type SessionTurn } from "../session/session-store.js";
 import type { SkillCatalog } from "../skills/discovery.js";
 import type { WorkspaceTools } from "../tools/workspace.js";
-import { ActivityView, activityLineCount } from "./activity-view.js";
+import { ActivityView, activityItems, activityLineCount } from "./activity-view.js";
 import { ChoicePicker } from "./choice-picker.js";
 import { ModelPicker } from "./model-picker.js";
 import { SlashSuggestions } from "./slash-suggestions.js";
+import { InlineLoader, TextLoader } from "./terminal-loaders.js";
 import { useHarnessController } from "./use-harness.js";
 import { fitRecentTurns } from "./viewport.js";
 
@@ -97,6 +98,7 @@ function App(properties: AppProperties): React.JSX.Element {
     columns,
     harness.showActivity,
   );
+  const currentActivity = activityItems(harness.liveActivity).at(-1)?.label ?? "calling the model";
 
   return (
     <Box flexDirection="column" height={rows} overflow="hidden" paddingX={1}>
@@ -204,7 +206,13 @@ function App(properties: AppProperties): React.JSX.Element {
                 : harness.modelEntryOpen
                   ? `Model: ${harness.input}`
                 : harness.busy
-                  ? "working…"
+                  ? (
+                    <>
+                      <InlineLoader color={properties.theme.accent} variant="matrix" size={24} />
+                      <Text> </Text>
+                      <TextLoader color={properties.theme.accent} text={currentActivity} variant="focus" />
+                    </>
+                  )
                   : harness.input}
             </Text>
             {!harness.busy && <Text inverse> </Text>}
