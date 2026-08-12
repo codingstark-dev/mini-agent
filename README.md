@@ -1,18 +1,17 @@
 # mini-agent
 
-A small Claude-powered command-line agent that implements the core
-[Agent Skills](https://agentskills.io/) lifecycle: discover, disclose, select, and
-load.
+A small Node.js coding agent that calls Claude directly and implements the core
+[Agent Skills](https://agentskills.io/) lifecycle: discover, disclose, activate,
+and follow.
 
-The important behavior is progressive disclosure. Claude initially sees only each
-skill's name and description. When a prompt matches, Claude calls `activate_skill`
-and receives the full instructions. Referenced files are loaded separately and only
-from inside the active skill directory.
+The central constraint is progressive disclosure. Claude initially receives only
+each skill's `name` and `description`. Full instructions enter the conversation
+only after Claude selects the skill, and supporting files are read separately when
+the active skill needs them.
 
-## Try it
+## Quick start
 
-Requirements: Node.js 20.11 or newer and an API key for one of the supported
-providers.
+Requirements: Node.js 20.11 or newer and an Anthropic API key.
 
 ```bash
 npm install
@@ -20,102 +19,181 @@ export ANTHROPIC_API_KEY="your-key"
 npm run dev -- "I'm new to this project, what should I do?"
 ```
 
-Running `npm run dev` without a prompt opens the React/Ink terminal interface.
-If the selected provider has no key, the interface still opens. Run `/key`, choose
-a provider, confirm or edit its model ID, and enter the key in the masked prompt.
-The provider and model become active, are saved with the session, and are restored
-the next time the interface starts. Explicit command-line options and environment
-settings still take precedence. Environment API keys take precedence over locally
-saved keys, which live outside sessions in an owner-readable-only state file.
-When OpenRouter is selected, press `Ctrl+P` to open the model picker. It fetches
-tool-capable models on demand, supports search and arrow-key navigation, and accepts
-a complete custom `provider/model` ID. The next prompt uses the selected model.
-
-Type `/` to search commands and installed skills, use the arrow keys to choose, and
-press `Tab` to complete. The interface stays inside the current terminal height and
-keeps recent model, skill, tool, and subagent activity visible. While work is running,
-an animated matrix marker shows the current activity and incoming response text streams
-through a focus label inside the conversation; the composer remains clear. Press
-`Escape` to stop the current run without adding a partial turn to the session.
-
-Interactive sessions are saved locally and can be resumed after restarting. Type
-`/help` for the command list. The main commands are `/plan`, `/start-work`, `/loop`,
-`/key`, `/model`, `/history`, `/resume`, `/rewind`, `/undo`, `/redo`, `/new`, `/skills`,
-`/tools`, `/status`, and `/activity`.
-Rewind affects conversation context only and restores the removed prompt for editing;
-it never claims to restore files.
-
-The agent can list, search, read, write, and precisely edit files inside one workspace.
-It can also read bounded git history, which lets `changelog-generator` inspect real
-commits without exposing a general shell.
-Search uses `rg` without a shell, and every path is checked against the workspace root,
-including symlink targets. The current directory is writable by default; use
-`--workspace <path>` to choose another root or `--read-only` to hide the mutating
-tools. `/tools` shows the active permission and available tools.
-
-Anthropic is the default. OpenRouter and Vercel AI Gateway use the same agent and
-skill loop through their OpenAI-compatible endpoints:
-
-```bash
-export OPENROUTER_API_KEY="your-key"
-npm run dev -- --provider openrouter "I'm new to this project"
-
-# Switch to any OpenRouter model
-npm run dev -- -p openrouter -m deepseek/deepseek-v4-flash "Review this code"
-
-export AI_GATEWAY_API_KEY="your-key"
-npm run dev -- --provider vercel "Write release notes: feat: add export"
-```
-
-The gateway default is `anthropic/claude-sonnet-4.6`. Model IDs are passed through
-to the selected provider, so there is no fixed model list. Choose one with `--model`
-or `-m`, or set `MINI_AGENT_PROVIDER` and `MINI_AGENT_MODEL` in your environment.
-
-There is also a deterministic demo that does not call an API:
-
-```bash
-npm run demo:mock
-
-# Offline proof of the real write_file tool loop
-npm run dev -- --mock --workspace /tmp/mini-agent-demo "Create an HTML page"
-```
-
-The onboarding demo starts with the current linked skill's required header:
+The onboarding prompt activates `welcome-me` and follows the bundled skill. The
+linked upstream skill currently requires this first line:
 
 ```text
 > Welcome to our Command Code assignment agent!
 ```
 
-Example prompts:
-
-```text
-I'm new to this project, what should I do?
-Turn these commits into release notes: feat: add export; fix: preserve filenames.
-Write a short 3P update for the team.
-```
-
-Useful commands:
+An unrelated prompt must not load those instructions:
 
 ```bash
-npm run dev -- skills list
-npm run dev -- skills doctor
-npm run dev -- --debug "I'm new to this project"
-npm run dev -- --json "Write release notes: feat: add export; fix: preserve filenames"
-npm run dev -- "/welcome-me show me around"
-npm run dev -- "/changelog-generator Create notes from recent commits"
+npm run dev -- "What's the weather?"
 ```
 
-The direct Anthropic default is `claude-sonnet-5`. It calls the Claude Messages API
-with Node's native `fetch`; the project has no Anthropic SDK dependency.
+To prove the selection path without spending API credits, run the deterministic
+demo:
 
-The main model may delegate bounded, tool-free analysis tasks to isolated subagents.
-The default limit is two per run; set it with `--subagents <n>` or
-`MINI_AGENT_SUBAGENTS`. Set the limit to `0` to disable delegation.
+```bash
+npm run demo:mock
+```
+
+The mock is deliberately narrow. It proves discovery, activation, and tool-loop
+plumbing; normal questions require a configured model provider.
+
+## What to test
+
+| Prompt | Expected skill |
+| --- | --- |
+| `I'm new to this project, what should I do?` | `welcome-me` |
+| `Turn the recent commits into release notes.` | `changelog-generator` |
+| `What's the weather?` | None |
+
+Use `--debug` to print activations to stderr or `--json` for structured output:
+
+```bash
+npm run dev -- --debug "I'm new to this project"
+npm run dev -- --json "Turn the recent commits into release notes"
+```
+
+## How skill loading works
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant C as CLI
+    participant D as Skill catalog
+    participant M as Claude
+    participant S as Selected skill
+
+    C->>D: Discover SKILL.md files
+    D-->>C: Names and descriptions only
+    U->>C: Submit a prompt
+    C->>M: Prompt and skill catalog
+    alt A skill matches
+        M->>C: activate_skill(name)
+        C->>S: Read full instructions
+        S-->>C: Instructions and resource list
+        C->>M: Activated skill as tool result
+        opt A referenced file is needed
+            M->>C: read_skill_resource(skill, path)
+            C->>S: Read the bounded resource
+            S-->>M: Resource content
+        end
+    else No skill matches
+        M-->>C: Answer without activation
+    end
+    M-->>U: Final response
+```
+
+This follows the specification's three context levels:
+
+1. **Catalog:** load every skill's name and description.
+2. **Instructions:** load one complete `SKILL.md` body after activation.
+3. **Resources:** load referenced files only when they are needed.
+
+The `activate_skill` schema contains an enum of discovered names, so the model
+cannot request an unknown skill. `/welcome-me ...` and other skill slash commands
+also support explicit user activation.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    Input[Prompt or Ink UI] --> Agent[Agent loop]
+    Agent --> Provider{Provider adapter}
+    Provider --> Anthropic[Claude Messages API]
+    Provider --> OpenRouter[OpenRouter]
+    Provider --> Vercel[Vercel AI Gateway]
+    Agent --> Skills[Skill catalog]
+    Skills --> Activate[activate_skill]
+    Skills --> Resource[read_skill_resource]
+    Agent --> Tools[Workspace tools]
+    Agent --> Delegate[Bounded subagent]
+    Agent --> Events[Activity and token events]
+    Events --> Session[Session history]
+```
+
+The provider boundary normalizes text, tool calls, stop reasons, request IDs, and
+token usage. Anthropic is implemented with Node's native `fetch` against the Claude
+Messages API; there is no Anthropic SDK dependency.
+
+## Interactive terminal
+
+Run without a prompt to open the React/Ink interface:
+
+```bash
+npm run dev
+```
+
+If a provider has no saved key, use `/key`. Choose a provider, confirm or edit its
+model ID, and enter the key in the masked input. Keys are stored outside session
+files with owner-only permissions. Environment variables take precedence over saved
+credentials.
+
+Useful controls:
+
+| Control | Action |
+| --- | --- |
+| `/` | Search commands and installed skills |
+| `Ctrl+P` | Search OpenRouter models |
+| `Ctrl+R` or `/rewind` | Rewind conversation context |
+| `Escape` | Stop the active run |
+| `Ctrl+C` | Exit |
+
+The conversation displays streamed response text, model turns, skill activation,
+tool and subagent activity, stop reasons, and token usage. The viewport stays within
+the current terminal height instead of pushing live activity below the composer.
+
+Sessions are saved locally. `/history` lists them, `/resume` opens an earlier
+session, and `/redo` reapplies a rewound turn. Rewind changes conversation context
+only; it does not claim to reverse file changes.
+
+## Providers and models
+
+Anthropic is the default provider and `claude-sonnet-5` is the default model.
+
+| Provider | Key | Example model |
+| --- | --- | --- |
+| Anthropic | `ANTHROPIC_API_KEY` | `claude-sonnet-5` |
+| OpenRouter | `OPENROUTER_API_KEY` | `deepseek/deepseek-v4-flash` |
+| Vercel AI Gateway | `AI_GATEWAY_API_KEY` | `anthropic/claude-sonnet-4.6` |
+
+Select a provider or model from the command line:
+
+```bash
+npm run dev -- -p openrouter -m deepseek/deepseek-v4-flash "Review this project"
+npm run dev -- -p vercel -m anthropic/claude-sonnet-4.6 "Write release notes"
+```
+
+Model IDs are passed through to the provider. OpenRouter's `Ctrl+P` picker fetches
+tool-capable models, supports search, and accepts a complete custom model ID.
+
+## Workspace tools
+
+The agent can inspect and edit one workspace through explicit tools:
+
+- list files;
+- search with `rg` without invoking a shell;
+- read bounded files;
+- inspect bounded git history;
+- write files;
+- apply precise text edits.
+
+Every requested path and resolved symlink target must stay inside the workspace.
+Use `--workspace <path>` to select a different root or `--read-only` to remove write
+and edit tools.
+
+An offline tool-loop demo creates a small page in a temporary workspace:
+
+```bash
+npm run dev -- --mock --workspace /tmp/mini-agent-demo "Create an HTML page"
+```
 
 ## Native workflow
 
-The optional native harness adds a small plan → execute → verify loop without
-changing the ordinary prompt flow:
+The optional workflow separates planning, execution, and verification:
 
 ```text
 /plan Add validation to the config loader
@@ -123,115 +201,95 @@ changing the ordinary prompt flow:
 /loop 6
 ```
 
-`/plan` uses read-only tools and stores a decision-complete plan in the current
-session. `/start-work` gives the next step to `super-executor`, then asks
-`super-verifier` to inspect it independently. `/loop` repeats that cycle until all
-steps pass or the bounded iteration limit is reached. Plans survive `/history` and
-follow `/rewind` and `/redo` with the conversation.
+`/plan` stores a decision-complete plan using read-only tools. `/start-work` gives
+one step to `super-executor` and asks `super-verifier` to inspect the result.
+`/loop` repeats that bounded cycle until every step passes or the iteration limit
+is reached.
 
-Set `VERIFY_CMD` when there is a canonical local check. Its exit status and bounded
-output become evidence for the verifier:
+Set `VERIFY_CMD` when the project has a canonical local check:
 
 ```bash
 VERIFY_CMD="npm test" npm run dev
 ```
 
-The five focused role definitions live in `agents/`: `super-planner`,
-`super-executor`, `super-verifier`, `super-explorer`, and `super-oracle`. The
-implementation is part of this repository and is released under MIT.
+Five focused role definitions live in `agents/`: `super-planner`, `super-executor`,
+`super-verifier`, `super-explorer`, and `super-oracle`. The main agent can also
+delegate a small number of tool-free analysis tasks. Set `--subagents 0` to disable
+that capability.
 
-## How it is put together
-
-```text
-CLI or Ink UI
-      │
-  agent loop ─── provider interface
-      │              ├── Anthropic
-      │              ├── OpenRouter
-      │              └── Vercel AI Gateway
-      ├── skill catalog
-      │     ├── activate_skill
-      │     └── read_skill_resource
-      ├── bounded subagent requests
-      ├── workspace tools ─── list, rg search, git history, read, write, edit
-      └── activity events
-
-  native workflow ─── plan → one step → independent verification
-  session store ─── history, resume, rewind, redo
-```
+## Project structure
 
 ```text
-.skills/                 bundled assessment skills
-agents/                  focused native workflow roles
-src/agent/               model and tool loop
-src/providers/           direct Claude and compatible provider adapters
-src/session/             atomic local history and rewind state
-src/skills/              discovery, validation, activation, resources
-src/tools/               workspace boundary and file tools
-src/ui/                  React/Ink interface
-src/workflow/            stored plan, execution, and verification loop
-tests/                   behavior at the public seams
-scripts/                 build, size, and release checks
+.skills/          three bundled assessment skills
+agents/           native workflow role definitions
+src/agent/        model and tool loop
+src/providers/    Anthropic and compatible provider adapters
+src/session/      session history, resume, rewind, and redo
+src/skills/       discovery, validation, activation, and resources
+src/tools/        bounded workspace tools
+src/ui/           React/Ink terminal interface
+src/workflow/     plan, execute, and verify workflow
+tests/            behavior tests at public seams
+scripts/          build, size, and release checks
 ```
 
-Skill discovery checks bundled skills, `~/.agents/skills`, `.agents/skills`, and the
-assignment's `.skills` directory. Project skills take precedence. Invalid skills are
-reported by `skills doctor` instead of breaking the session.
+Skill discovery checks the bundled `.skills` directory, `~/.agents/skills`,
+`.agents/skills`, and a project `.skills` directory. Project skills take precedence.
+Malformed or invalid skills appear in `skills doctor` instead of crashing startup.
 
-The default production path relies on Sonnet's judgment to choose a skill from its
-description. Other configured models use the same tool interface. The `--mock`
-option uses a tiny deterministic fixture solely so the demo and tests work without
-credentials.
+```bash
+npm run dev -- skills list
+npm run dev -- skills doctor
+```
 
-## Verification
+## Verification and packaging
+
+Run the complete local gate:
 
 ```bash
 npm run check
+```
+
+It runs the type checker, sixty behavior tests, full and lite builds, and byte-budget
+checks. Build the installable release archive with:
+
+```bash
 npm run pack:release
 ```
 
-`npm run check` runs the type checker, sixty behavior tests, both builds, and byte
-budgets. The current arm64 macOS build measures:
+Current arm64 macOS measurements:
 
 | Artifact | Size |
 | --- | ---: |
-| Lite, headless CLI | 154,345 bytes |
-| Full CLI, React UI, skills, roles, and notices | 905,099 bytes |
-| Compressed release tarball | 346,777 bytes |
+| Lite headless CLI | 154,345 bytes |
+| Full CLI, UI, skills, roles, and notices | 905,099 bytes |
+| Compressed release archive | < 350 KB |
 
-Every provider uses Node's native `fetch`, keeping both builds below 1 MB. Both require
-an installed Node runtime; neither measurement hides an embedded standalone runtime.
-The release tarball contains no production dependency declarations.
+Both builds require an installed Node.js runtime. The size measurements do not hide
+an embedded standalone runtime. The release contains bundled, minified application
+code and no production dependency declarations.
 
-The deterministic suite exercises the complete selection loop without credentials.
-A live Sonnet smoke test was not run in the build environment because provider
-credentials were unavailable.
+To install the generated archive as a command available from any directory:
 
-The terminal was also exercised at 80×24 for slash completion, model selection,
-fixed-height rendering, session controls, persistent activity rows, the token bar,
-workspace tool creation, the native plan and verification flow, and modal cancellation.
+```bash
+npm install -g ./artifacts/mini-agent-0.1.0.tgz
+mini-agent
+```
 
 ## Submission notes
 
-I spent about six hours on specification review, implementation, tests, and
-packaging.
+**Time spent:** about six hours across specification review, implementation, tests,
+terminal QA, and packaging.
 
-The part I paid most attention to was proving that instructions are absent before
-activation, rather than merely claiming they are loaded lazily. Resource-backed
-skills also needed a narrow file boundary so `..`, absolute paths, and symlink escapes
-cannot read outside the active skill. Workspace file tools use the same boundary and
-do not expose an unrestricted shell. Direct API adapters keep the provider boundary
-small enough to review while avoiding a large runtime dependency.
+**Challenges:** the most important design choice was proving that skill
+instructions are absent before activation, not simply saying they are loaded lazily.
+Resource files and workspace tools also needed a real path boundary that rejects
+traversal and symlink escapes. The provider adapters were kept small and use native
+`fetch`, while the agent loop remains provider-independent.
 
-The native workflow was interesting for a different reason: execution and
-verification must not collapse into the same self-assessment. The executor receives
-one stored step, while the verifier gets read-only tools plus any `VERIFY_CMD`
-evidence and must return a clear pass or fail before the plan advances.
+The deterministic suite covers selection and negative matching without
+credentials. A live Sonnet smoke test is intentionally not part of the automated
+gate because it would require a secret and spend API credits.
 
-I kept the submission focused on the requested Node CLI, Sonnet, and Agent Skills
-behavior. OpenRouter and Vercel AI Gateway are small provider adapters rather than a
-plugin framework. I left out the marketplace, arbitrary plugin execution, and a
-partial MCP client because they would distract from the code being assessed.
-
-The bundled skills are pinned to their source commit; see
+The bundled skills are pinned to their source commit with their license files. See
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
