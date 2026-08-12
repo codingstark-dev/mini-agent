@@ -33,7 +33,7 @@ interface Options {
   maxSubagents: number;
   workspace: string;
   workspaceMode: WorkspaceMode;
-  command?: "list" | "doctor";
+  command?: "list" | "doctor" | "help";
 }
 
 function parseArguments(arguments_: string[]): Options {
@@ -52,6 +52,7 @@ function parseArguments(arguments_: string[]): Options {
   for (let index = 0; index < arguments_.length; index += 1) {
     const argument = arguments_[index];
     if (argument === "--debug") debug = true;
+    else if (argument === "--help" || argument === "-h") command = "help";
     else if (argument === "--json") json = true;
     else if (argument === "--mock") mock = true;
     else if (argument === "--provider" || argument === "-p") {
@@ -114,6 +115,10 @@ function printHelp(): void {
 
 async function main(): Promise<void> {
   const options = parseArguments(process.argv.slice(2));
+  if (options.command === "help") {
+    printHelp();
+    return;
+  }
   const catalog = await discoverSkills(defaultSkillScopes());
 
   if (options.command === "list") {

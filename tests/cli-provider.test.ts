@@ -69,3 +69,12 @@ test("the subagent budget can be configured from the CLI", async () => {
   assert.equal(result.code, 0);
   assert.equal(result.stderr, "");
 });
+
+test("the global CLI exposes standard help flags", async () => {
+  for (const flag of ["--help", "-h"]) {
+    const result = await runCli([flag], process.env);
+    assert.equal(result.code, 0);
+    assert.equal(result.stderr, "");
+    assert.match(result.stdout, /mini-agent \[options\]/);
+  }
+});
