@@ -51,6 +51,7 @@ export interface RunAgentOptions {
   signal?: AbortSignal;
   onActivation?: (name: string) => void;
   onEvent?: (event: AgentEvent) => void;
+  onTextDelta?: (text: string) => void;
   systemGuidance?: string;
 }
 
@@ -249,6 +250,7 @@ export async function runAgent(options: RunAgentOptions): Promise<AgentResult> {
       messages,
       tools: availableTools,
       ...(options.signal ? { signal: options.signal } : {}),
+      ...(options.onTextDelta ? { onTextDelta: options.onTextDelta } : {}),
     });
     addUsage(usage, response.usage);
     options.onEvent?.({

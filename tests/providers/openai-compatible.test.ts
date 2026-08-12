@@ -167,3 +167,76 @@ test("repairs common JSON defects in tool arguments", async () => {
     input: { path: "index.html", content: "line one\nline two" },
   }]);
 });
+
+test("streams text from an OpenAI-compatible endpoint", async () => {
+  let request: RequestInit | undefined;
+  const deltas: string[] = [];
+  const body = [
+    'data: {"id":"chat_stream","choices":[{"delta":{"content":"Hello"},"finish_reason":null}]}',
+    'data: {"id":"chat_stream","choices":[{"delta":{"content":" gateway"},"finish_reason":null}]}',
+    'data: {"id":"chat_stream","choices":[{"delta":{},"finish_reason":"stop"}]}',
+    'data: {"id":"chat_stream","choices":[],"usage":{"prompt_tokens":8,"completion_tokens":2}}',
+    "data: [DONE]",
+    "",
+  ].join("\n\n");
+  const provider = new OpenAICompatibleProvider({
+    apiKey: "test-key",
+    endpoint: "https://gateway.example/v1/chat/completions",
+    model: "test-model",
+    name: "Test gateway",
+    fetch: async (_input, init) => {
+      request = init;
+      return new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } });
+    },
+  });
+
+  const response = await provider.complete({
+    system: "Be concise.",
+    messages: [{ role: "user", content: [{ type: "text", text: "Hi" }] }],
+    tools: [],
+    onTextDelta: (text) => { deltas.push(text); },
+  });
+
+  const requestBody = JSON.parse(String(request?.body)) as {
+    stream?: boolean;
+    stream_options?: { include_usage?: boolean };
+  };
+  assert.equal(requestBody.stream, true);
+  assert.equal(requestBody.stream_options?.include_usage, true);
+  assert.deepEqual(deltas, ["Hello", " gateway"]);
+  assert.deepEqual(response.content, [{ type: "text", text: "Hello gateway" }]);
+  assert.equal(response.stopReason, "end_turn");
+  assert.deepEqual(response.usage, { inputTokens: 8, outputTokens: 2 });
+});
+
+test("an OpenAI-compatible stream assembles split tool calls", async () => {
+  const body = [
+    'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"activate_","arguments":"{\\"name\\":"}}]},"finish_reason":null}]}',
+    'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"skill","arguments":"\\"welcome-me\\"}"}}]},"finish_reason":null}]}',
+    'data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}',
+    "data: [DONE]",
+    "",
+  ].join("\n\n");
+  const provider = new OpenAICompatibleProvider({
+    apiKey: "test-key",
+    endpoint: "https://gateway.example/v1/chat/completions",
+    model: "test-model",
+    name: "Test gateway",
+    fetch: async () => new Response(body, { status: 200 }),
+  });
+
+  const response = await provider.complete({
+    system: "Use tools.",
+    messages: [{ role: "user", content: [{ type: "text", text: "Help me start" }] }],
+    tools: [],
+    onTextDelta() {},
+  });
+
+  assert.deepEqual(response.content, [{
+    type: "tool_use",
+    id: "call_1",
+    name: "activate_skill",
+    input: { name: "welcome-me" },
+  }]);
+  assert.equal(response.stopReason, "tool_use");
+});

@@ -1,4 +1,5 @@
 import type { Provider, ProviderContent, ProviderRequest, ProviderResponse } from "./types.js";
+import { eventStreamData } from "./event-stream.js";
 
 export interface AnthropicProviderOptions {
   apiKey: string;
@@ -21,6 +22,92 @@ function apiContent(block: ProviderContent): Record<string, unknown> {
         ...(block.isError === undefined ? {} : { is_error: block.isError }),
       };
   }
+}
+
+function anthropicStopReason(value: string | null | undefined): ProviderResponse["stopReason"] {
+  if (value === "end_turn") return "end_turn";
+  if (value === "tool_use") return "tool_use";
+  if (value === "max_tokens") return "max_tokens";
+  if (value === "refusal") return "refusal";
+  return "other";
+}
+
+interface StreamingBlock {
+  type: "text" | "tool_use";
+  text: string;
+  id: string;
+  name: string;
+  input: string;
+}
+
+async function streamingResponse(
+  response: Response,
+  request: ProviderRequest,
+  requestId: string | undefined,
+): Promise<ProviderResponse> {
+  const blocks = new Map<number, StreamingBlock>();
+  let stopReason: ProviderResponse["stopReason"] = "other";
+  let inputTokens = 0;
+  let outputTokens = 0;
+
+  for await (const data of eventStreamData(response)) {
+    const event = JSON.parse(data) as {
+      type?: string;
+      index?: number;
+      message?: { usage?: { input_tokens?: number } };
+      content_block?: { type?: string; text?: string; id?: string; name?: string };
+      delta?: { type?: string; text?: string; partial_json?: string; stop_reason?: string };
+      usage?: { output_tokens?: number };
+      error?: { message?: string };
+    };
+    if (event.type === "error") {
+      throw new Error(`Claude stream failed${event.error?.message ? `: ${event.error.message}` : ""}`);
+    }
+    if (event.type === "message_start") inputTokens = event.message?.usage?.input_tokens ?? 0;
+    if (event.type === "content_block_start" && typeof event.index === "number") {
+      const block = event.content_block;
+      blocks.set(event.index, {
+        type: block?.type === "tool_use" ? "tool_use" : "text",
+        text: block?.text ?? "",
+        id: block?.id ?? "",
+        name: block?.name ?? "",
+        input: "",
+      });
+    }
+    if (event.type === "content_block_delta" && typeof event.index === "number") {
+      const block = blocks.get(event.index);
+      if (!block) continue;
+      const delta = event.delta;
+      if (delta?.type === "text_delta" && delta.text) {
+        block.text += delta.text;
+        request.onTextDelta?.(delta.text);
+      }
+      if (delta?.type === "input_json_delta") block.input += delta.partial_json ?? "";
+    }
+    if (event.type === "message_delta") {
+      stopReason = anthropicStopReason(event.delta?.stop_reason);
+      outputTokens = event.usage?.output_tokens ?? outputTokens;
+    }
+  }
+
+  const content: ProviderResponse["content"] = [];
+  for (const [, block] of [...blocks.entries()].sort(([left], [right]) => left - right)) {
+    if (block.type === "text" && block.text) content.push({ type: "text", text: block.text });
+    if (block.type === "tool_use" && block.id && block.name) {
+      content.push({
+        type: "tool_use",
+        id: block.id,
+        name: block.name,
+        input: JSON.parse(block.input || "{}") as unknown,
+      });
+    }
+  }
+  return {
+    content,
+    stopReason,
+    ...(requestId ? { requestId } : {}),
+    usage: { inputTokens, outputTokens },
+  };
 }
 
 export class AnthropicProvider implements Provider {
@@ -47,6 +134,7 @@ export class AnthropicProvider implements Provider {
       body: JSON.stringify({
         model: this.model,
         max_tokens: this.maxTokens,
+        ...(request.onTextDelta ? { stream: true } : {}),
         system: request.system,
         messages: request.messages.map((message) => ({
           role: message.role,
@@ -70,6 +158,7 @@ export class AnthropicProvider implements Provider {
       const details = (await response.text()).slice(0, 500);
       throw new Error(`Claude API returned ${response.status}${details ? `: ${details}` : ""}`);
     }
+    if (request.onTextDelta) return streamingResponse(response, request, requestId);
 
     const payload = (await response.json()) as {
       content?: Array<{ type?: string; text?: string; id?: string; name?: string; input?: unknown }>;
@@ -85,8 +174,7 @@ export class AnthropicProvider implements Provider {
         content.push({ type: "tool_use", id: block.id, name: block.name, input: block.input });
       }
     }
-    const knownReasons = ["end_turn", "tool_use", "max_tokens", "refusal"] as const;
-    const stopReason = knownReasons.find((reason) => reason === payload.stop_reason) ?? "other";
+    const stopReason = anthropicStopReason(payload.stop_reason);
     const inputTokens = payload.usage?.input_tokens;
     const outputTokens = payload.usage?.output_tokens;
     return {

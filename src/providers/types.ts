@@ -35,6 +35,7 @@ export interface ProviderRequest {
   messages: ProviderMessage[];
   tools: ProviderTool[];
   signal?: AbortSignal;
+  onTextDelta?: (text: string) => void;
 }
 
 export interface ProviderUsage {

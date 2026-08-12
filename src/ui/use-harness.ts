@@ -55,6 +55,7 @@ interface HarnessState {
   session: AgentSession;
   turns: SessionTurn[];
   liveActivity: AgentEvent[];
+  streamingText: string;
   showActivity: boolean;
   modelPickerOpen: boolean;
   picker: PickerState | undefined;
@@ -147,6 +148,7 @@ export function useHarnessController(options: HarnessOptions): HarnessController
     session: createSession(options.providerName, options.model),
     turns: [],
     liveActivity: [],
+    streamingText: "",
     showActivity: true,
     modelPickerOpen: false,
     picker: undefined,
@@ -576,10 +578,11 @@ export function useHarnessController(options: HarnessOptions): HarnessController
       return;
     }
 
-    patch({ input: "", busy: true, panel: "", notice: "", liveActivity: [] });
+    patch({ input: "", busy: true, panel: "", notice: "", liveActivity: [], streamingText: "" });
     const controller = new AbortController();
     runController.current = controller;
     const activity: AgentEvent[] = [];
+    let streamedText = "";
     try {
       const result = await runAgent({
         prompt,
@@ -590,8 +593,13 @@ export function useHarnessController(options: HarnessOptions): HarnessController
         signal: controller.signal,
         workspaceTools: options.workspaceTools,
         onEvent: (event) => {
+          if (event.type === "model_request") streamedText = "";
           activity.push(event);
-          patch({ liveActivity: [...activity] });
+          patch({ liveActivity: [...activity], streamingText: streamedText });
+        },
+        onTextDelta: (text) => {
+          streamedText += text;
+          patch({ streamingText: streamedText });
         },
       });
       const timestamp = new Date().toISOString();
@@ -621,7 +629,7 @@ export function useHarnessController(options: HarnessOptions): HarnessController
       });
     } finally {
       if (runController.current === controller) runController.current = undefined;
-      patch({ busy: false, liveActivity: [] });
+      patch({ busy: false, liveActivity: [], streamingText: "" });
     }
   }
 

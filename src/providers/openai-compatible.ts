@@ -5,6 +5,7 @@ import type {
   ProviderRequest,
   ProviderResponse,
 } from "./types.js";
+import { eventStreamData } from "./event-stream.js";
 
 export interface OpenAICompatibleProviderOptions {
   apiKey: string;
@@ -116,6 +117,90 @@ function parseToolArguments(value: string): unknown {
   }
 }
 
+interface StreamingToolCall {
+  id: string;
+  name: string;
+  arguments: string;
+}
+
+async function streamingResponse(
+  response: Response,
+  request: ProviderRequest,
+  providerName: string,
+  requestId: string | undefined,
+): Promise<ProviderResponse> {
+  let text = "";
+  let finishReason: string | null | undefined;
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let responseId: string | undefined;
+  const calls = new Map<number, StreamingToolCall>();
+
+  for await (const data of eventStreamData(response)) {
+    if (data === "[DONE]") break;
+    const chunk = JSON.parse(data) as {
+      id?: string;
+      choices?: Array<{
+        finish_reason?: string | null;
+        delta?: {
+          content?: string | null;
+          tool_calls?: Array<{
+            index?: number;
+            id?: string;
+            function?: { name?: string; arguments?: string };
+          }>;
+        };
+      }>;
+      usage?: { prompt_tokens?: number; completion_tokens?: number };
+      error?: { message?: string };
+    };
+    if (chunk.error) throw new Error(`${providerName} stream failed: ${chunk.error.message ?? "unknown error"}`);
+    responseId = chunk.id ?? responseId;
+    inputTokens = chunk.usage?.prompt_tokens ?? inputTokens;
+    outputTokens = chunk.usage?.completion_tokens ?? outputTokens;
+    const choice = chunk.choices?.[0];
+    if (!choice) continue;
+    finishReason = choice.finish_reason ?? finishReason;
+    const delta = choice.delta;
+    if (delta?.content) {
+      text += delta.content;
+      request.onTextDelta?.(delta.content);
+    }
+    for (const call of delta?.tool_calls ?? []) {
+      const index = call.index ?? 0;
+      const current = calls.get(index) ?? { id: "", name: "", arguments: "" };
+      current.id += call.id ?? "";
+      current.name += call.function?.name ?? "";
+      current.arguments += call.function?.arguments ?? "";
+      calls.set(index, current);
+    }
+  }
+
+  const content: ProviderResponse["content"] = [];
+  if (text) content.push({ type: "text", text });
+  for (const call of [...calls.entries()].sort(([left], [right]) => left - right).map(([, value]) => value)) {
+    if (!call.id || !call.name) continue;
+    try {
+      content.push({
+        type: "tool_use",
+        id: call.id,
+        name: call.name,
+        input: parseToolArguments(call.arguments),
+      });
+    } catch {
+      throw new Error(`${providerName} returned invalid arguments for ${call.name}`);
+    }
+  }
+
+  const resolvedRequestId = requestId ?? responseId;
+  return {
+    content,
+    stopReason: stopReason(finishReason),
+    ...(resolvedRequestId ? { requestId: resolvedRequestId } : {}),
+    usage: { inputTokens, outputTokens },
+  };
+}
+
 export class OpenAICompatibleProvider implements Provider {
   private readonly options: Required<Pick<OpenAICompatibleProviderOptions, "maxTokens">> &
     Omit<OpenAICompatibleProviderOptions, "maxTokens" | "fetch">;
@@ -137,7 +222,8 @@ export class OpenAICompatibleProvider implements Provider {
       body: JSON.stringify({
         model: this.options.model,
         max_tokens: this.options.maxTokens,
-        stream: false,
+        stream: Boolean(request.onTextDelta),
+        ...(request.onTextDelta ? { stream_options: { include_usage: true } } : {}),
         messages: [
           { role: "system", content: request.system },
           ...request.messages.flatMap(chatMessages),
@@ -165,6 +251,9 @@ export class OpenAICompatibleProvider implements Provider {
       throw new Error(
         `${this.options.name} returned ${response.status}${details ? `: ${details}` : ""}`,
       );
+    }
+    if (request.onTextDelta) {
+      return streamingResponse(response, request, this.options.name, requestId);
     }
 
     const payload = (await response.json()) as {

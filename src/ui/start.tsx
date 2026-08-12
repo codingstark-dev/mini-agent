@@ -99,6 +99,10 @@ function App(properties: AppProperties): React.JSX.Element {
     harness.showActivity,
   );
   const currentActivity = activityItems(harness.liveActivity).at(-1)?.label ?? "calling the model";
+  const streamedLine = harness.streamingText.replaceAll(/\s+/g, " ").trim();
+  const loadingText = streamedLine
+    ? streamedLine.slice(-Math.max(12, columns - 8))
+    : currentActivity;
 
   return (
     <Box flexDirection="column" height={rows} overflow="hidden" paddingX={1}>
@@ -210,7 +214,7 @@ function App(properties: AppProperties): React.JSX.Element {
                     <>
                       <InlineLoader color={properties.theme.accent} variant="matrix" size={24} />
                       <Text> </Text>
-                      <TextLoader color={properties.theme.accent} text={currentActivity} variant="focus" />
+                      <TextLoader color={properties.theme.accent} text={loadingText} variant="focus" />
                     </>
                   )
                   : harness.input}
