@@ -281,15 +281,34 @@ mini-agent
 **Time spent:** about six hours across specification review, implementation, tests,
 terminal QA, and packaging.
 
-**Challenges:** the most important design choice was proving that skill
-instructions are absent before activation, not simply saying they are loaded lazily.
-Resource files and workspace tools also needed a real path boundary that rejects
-traversal and symlink escapes. The provider adapters were kept small and use native
-`fetch`, while the agent loop remains provider-independent.
+**Challenges faced:** the TUI took the most iteration. My first version put live
+model activity in a footer. Long replies made streamed text and tool calls appear
+beside the input or outside the visible terminal. I changed the partial reply into
+a normal conversation turn, moved activity into its own rows, and calculated the
+line budget from the terminal width. The UI now favors recent activity instead of
+trying to keep unlimited scrollback on screen.
 
-The deterministic suite covers selection and negative matching without
-credentials. A live Sonnet smoke test is intentionally not part of the automated
-gate because it would require a secret and spend API credits.
+The agent loop had a less visible failure: every run stopped after six model turns.
+A prompt that delegated work or retried a broken tool call could end before it had
+an answer. The turn budget now grows with the configured subagent limit. Invalid
+tool arguments receive the expected schema and one repair attempt. If the same bad
+call repeats, the tool is disabled for that run. The loop remains bounded, so a
+long tool chain can still stop and must be continued in another prompt.
+
+`changelog-generator` selected correctly, then failed because it could not inspect
+the repository. I added a bounded `git_history` tool that calls `git` directly
+without exposing a general shell. This requires a real git checkout; a downloaded
+source archive without `.git` cannot provide commit history.
+
+Persistence looked correct until the next restart, when the UI asked for the key
+again and could forget the selected provider. Provider and model selection now live
+with the session. Credentials use a separate owner-readable state file, and
+environment variables take precedence over both.
+
+Subagents are intentionally small: they run sequentially, have no workspace tools,
+and are limited to focused analysis. The mock provider is similarly narrow and only
+covers known demo paths. A live Sonnet smoke test remains manual because the
+automated gate does not use secrets or spend API credits.
 
 The bundled skills are pinned to their source commit with their license files. See
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
